@@ -31,6 +31,7 @@ let tray = null;
 let backend = null;
 let backendPort = null;
 let logStream = null;
+let userDataDir = null;
 let isQuitting = false;
 let isRestarting = false;   // suppresses the "backend died" alarm during a deliberate restart
 const backendLog = [];   // tail kept in memory so a startup failure can be shown
@@ -393,10 +394,74 @@ function stopBackend() {
   backend = null;
 }
 
+// --------------------------------------------------------------- settings
+// One small JSON file for preferences that must survive a restart. Not the
+// database: this is app state, not the user's data, and mixing the two means a
+// database import would silently carry someone else's preferences along.
+
+function settingsPath(userData) {
+  return path.join(userData, 'settings.json');
+}
+
+function readSettings(userData) {
+  try {
+    return JSON.parse(fs.readFileSync(settingsPath(userData), 'utf8'));
+  } catch (err) {
+    // Missing is normal on first run; corrupt should not be fatal for something
+    // this trivial. Either way an empty object gives every caller its defaults.
+    return {};
+  }
+}
+
+/**
+ * Write settings by writing a temporary file and renaming it over the target.
+ *
+ * A plain write truncates the file first and then fills it, so a crash or a
+ * power cut in between leaves a half-written file that will not parse. Rename
+ * is atomic: readers see either the whole old file or the whole new one, never
+ * a partial one. This is the pattern to reach for any time JSON is being used
+ * as a store rather than a database.
+ */
+function writeSettings(userData, patch) {
+  const merged = { ...readSettings(userData), ...patch };
+  const target = settingsPath(userData);
+  const tmp = target + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), 'utf8');
+  fs.renameSync(tmp, target);
+  return merged;
+}
+
+/**
+ * Closing the window hides the app instead of quitting, which is deliberate —
+ * the daily scheduler only runs while the process is alive. But an app that
+ * ignores the close button without saying so looks broken, or worse, looks
+ * closed while it is still running. Say it once, the first time.
+ *
+ * Once, not every time: a notification on every close would be nagging, and
+ * people stop reading things that always appear. The tray tooltip carries the
+ * standing reminder instead.
+ */
+function announceStillRunning(userData) {
+  if (readSettings(userData).trayNoticeShown) return;
+
+  notify(
+    '仍在后台运行 / Still running',
+    '窗口已收进托盘,每日 18:00 的自动抓取会继续。\n'
+    + '要真正退出:右键托盘图标 → 退出。\n\n'
+    + 'Hidden to the tray — the daily fetch keeps running. '
+    + 'To quit for real: right-click the tray icon → Quit.');
+
+  writeSettings(userData, { trayNoticeShown: true });
+  log('told the user the app is still running in the tray (first time only)');
+}
+
 function notify(title, body) {
   log(`notify: ${title} — ${body.replace(/\n/g, ' / ')}`);
   if (Notification.isSupported()) {
-    new Notification({ title, body, icon: fs.existsSync(ICON) ? ICON : undefined }).show();
+    const n = new Notification({ title, body, icon: fs.existsSync(ICON) ? ICON : undefined });
+    // A notification about the app is a reasonable place to click to reach it.
+    n.on('click', showWindow);
+    n.show();
   } else {
     dialog.showMessageBox({ type: 'info', title: 'Horizon Holdings', message: title, detail: body });
   }
@@ -534,6 +599,7 @@ function createWindow(show) {
     if (!isQuitting) {
       e.preventDefault();
       mainWindow.hide();
+      announceStillRunning(userDataDir);
     }
   });
 }
@@ -551,7 +617,9 @@ function buildTray(userData) {
     : nativeImage.createEmpty();
 
   tray = new Tray(image);
-  tray.setToolTip(`Horizon Holdings ${app.getVersion()}`);
+  // The standing reminder that closing the window did not quit the app. The
+  // one-time notification tells you once; this is here every time you look.
+  tray.setToolTip(`Horizon Holdings ${app.getVersion()} — 后台运行中 / running in background`);
 
   const refreshMenu = () => {
     const openAtLogin = app.getLoginItemSettings().openAtLogin;
@@ -610,7 +678,13 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', showWindow);
 
   app.whenReady().then(async () => {
+    // Without this, Windows attributes notifications to "electron.app.…" and may
+    // not show them at all. It must match the appId electron-builder packages
+    // with, or the packaged app and the dev run behave differently.
+    app.setAppUserModelId('com.horizonholdings.desktop');
+
     const userData = app.getPath('userData');
+    userDataDir = userData;
     fs.mkdirSync(userData, { recursive: true });
     logStream = fs.createWriteStream(path.join(userData, 'desktop.log'), { flags: 'a' });
     log(`--- launch (packaged=${app.isPackaged}) userData=${userData}`);

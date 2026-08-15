@@ -317,7 +317,9 @@
       <li><a href="#p11"><span class="n">11</span><span>Keeping track of changes</span></a></li>
       <li><a href="#p12"><span class="n">12</span><span>Getting it to other people</span></a></li>
       <li><a href="#p13"><span class="n">13</span><span>Building with an AI assistant</span></a></li>
-      <li><a href="#p14"><span class="n">14</span><span>What transfers</span></a></li>
+      <li><a href="#p14"><span class="n">14</span><span>Building something else</span></a></li>
+      <li><a href="#p15"><span class="n">15</span><span>When you get stuck</span></a></li>
+      <li><a href="#p16"><span class="n">16</span><span>What transfers</span></a></li>
     </ol>
   </nav>
 
@@ -337,8 +339,8 @@
         <span><b>SQLite</b> storage</span>
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
-        <span><b>~3,200</b> lines total</span>
-        <span><b>v1.4.0</b> shipped</span>
+        <span><b>~3,400</b> lines total</span>
+        <span><b>v1.5.0</b> shipped</span>
       </div>
     </header>
 
@@ -2961,9 +2963,407 @@ git push origin v1.4.0</code></pre>
       </p>
     </section>
 
-    <!-- ============================================ PART 12 -->
+    <!-- ============================================ PART 14 -->
     <section class="part" id="p14">
       <p class="part-num">Part 14</p>
+      <h2>Building something else</h2>
+      <p class="part-intro">
+        The most useful thing this document can tell you about your next
+        application is which parts of it to ignore.
+      </p>
+
+      <p>
+        Everything so far described one program: a Python backend, an HTTP API, a
+        browser-based interface, an Electron shell. It is easy to read that as
+        "this is how desktop apps are built". It is not. It is how <em>this</em>
+        one had to be built, and most of the shape traces back to a single fact.
+      </p>
+      <div class="aside">
+        <span class="tag">The one constraint that decided everything</span>
+        <p>
+          The hardest external job here was getting prices out of a service with
+          no official interface, and the library that does it well is Python. So
+          the logic had to be Python, so the interface had to reach Python
+          somehow, so there is an HTTP API and a shell that supervises a second
+          process.
+        </p>
+        <p>
+          Remove that one constraint and most of this architecture stops being
+          justified. <strong>An Enigma machine has no such constraint.</strong>
+        </p>
+      </div>
+
+      <h3>First decide which shape you actually need</h3>
+      <p>
+        Before choosing tools, answer one question: <em>is there anything in your
+        application that forces a particular language?</em> Then read across.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>If…</th><th>Then</th><th>Cost</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>A library you cannot replace exists only in language X</td>
+              <td>Backend in X + Electron shell — this project's shape</td>
+              <td>Two runtimes, two build steps, ~400&nbsp;MB</td>
+            </tr>
+            <tr>
+              <td>It is mostly self-contained computation</td>
+              <td>Write it in the shell's own language. One process, no HTTP at all</td>
+              <td>~150&nbsp;MB, far less machinery</td>
+            </tr>
+            <tr>
+              <td>You want Java specifically, and a web-style interface</td>
+              <td>Java backend + Electron shell — same shape, different filling</td>
+              <td>Two runtimes, but one you chose</td>
+            </tr>
+            <tr>
+              <td>You want Java and a native-looking window</td>
+              <td>JavaFX or Swing, packaged with <code>jpackage</code>. No Electron, no browser</td>
+              <td>~60&nbsp;MB, but UI work is slower than HTML</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        For an Enigma machine — rotors, a reflector, a plugboard, a keyboard and a
+        lampboard — every row except the first is reasonable, and the first is
+        not. There is no library you cannot write yourself; the machine <em>is</em>
+        the exercise. Choosing "Java backend + Electron" because this guide did it
+        would be copying an answer to a question you do not have.
+      </p>
+      <p>
+        Choose deliberately. If the goal is to learn Java, row three or four. If
+        the goal is the shortest path to a working app, row two. If the goal is
+        specifically to repeat this guide end to end, row three is the honest
+        version of that, and you should know you are paying for the lesson rather
+        than for the architecture.
+      </p>
+
+      <h3>Translating the toolchain</h3>
+      <p>
+        Every slot in this project has an equivalent everywhere else. The names
+        are unfamiliar; the jobs are identical.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Job</th><th>Python (here)</th><th>Java</th><th>Node / JS</th></tr></thead>
+          <tbody>
+            <tr><td>HTTP server</td><td>FastAPI + uvicorn</td><td>Javalin or Spark; the JDK also has a built-in one</td><td>Express, Fastify</td></tr>
+            <tr><td>Dependencies</td><td>pip + <code>requirements.txt</code></td><td>Maven (<code>pom.xml</code>) or Gradle</td><td>npm + <code>package.json</code></td></tr>
+            <tr><td>Isolated environment</td><td><code>.venv</code></td><td>not needed — the build tool isolates per project</td><td><code>node_modules</code></td></tr>
+            <tr><td>Bundle a runtime</td><td>PyInstaller</td><td><code>jpackage</code> (ships with the JDK), or GraalVM</td><td>Electron already contains one</td></tr>
+            <tr><td>Tests</td><td>pytest</td><td>JUnit 5</td><td><code>node --test</code></td></tr>
+            <tr><td>Read a bundled file</td><td><code>sys._MEIPASS</code></td><td><code>getResourceAsStream</code> — <em>not</em> <code>File</code></td><td><code>__dirname</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="aside note-bad">
+        <span class="tag">That last row is the same bug you already read about</span>
+        <p>
+          In Java, files inside a <code>.jar</code> are not files on disk. They are
+          entries in a zip archive. So this works when you press Run in your IDE
+          and fails the moment you build a jar:
+        </p>
+        <pre><code>// Works in the IDE. Throws FileNotFoundException from a jar.
+Scanner s = new Scanner(new File("rotors.json"));
+
+// Works in both.
+InputStream in = getClass().getResourceAsStream("/rotors.json");</code></pre>
+        <p>
+          This is the exact same shape as the PyInstaller path bug in Part 05, and
+          the exact same shape as the missing preload file in the same part:
+          <strong>the packaged program has a different idea of where things are
+          than the one you develop in.</strong> Different language, different tool,
+          identical trap — which is why Part 08's rule is worth carrying with you:
+          run the packaged artifact, not just the one in your editor.
+        </p>
+      </div>
+
+      <h3>JSON files instead of a database</h3>
+      <p>
+        A perfectly good choice here, and for a machine-configuration store
+        probably the right one. Be clear about what you are trading.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>JSON files are fine when…</th><th>You are giving up…</th></tr></thead>
+          <tbody>
+            <tr><td>The data is small enough to read and write whole</td><td>Partial reads and writes — you always rewrite everything</td></tr>
+            <tr><td>One program touches it at a time</td><td>Any safety if two things write at once</td></tr>
+            <tr><td>You never need to ask "which records match X"</td><td>Querying; you filter in memory instead</td></tr>
+            <tr><td>Being human-readable is genuinely useful</td><td>Transactions — the all-or-nothing guarantee</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        That last one is the one that bites, and it is not hypothetical. Writing a
+        file truncates it to zero and then fills it. If the program dies in
+        between — a crash, a power cut, someone closing the laptop — the file on
+        disk is empty or half-written, and the next launch cannot parse it. The
+        user's saved configurations are simply gone.
+      </p>
+      <p>
+        The fix is small and you should use it every single time JSON is acting as
+        a store. Write a temporary file, then rename it over the real one. Rename
+        is atomic: any reader sees the whole old file or the whole new one, never
+        a partial one.
+      </p>
+      <pre><code>// Java
+Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
+Files.writeString(tmp, json);
+Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);</code></pre>
+      <p>
+        This application does exactly that for its own <code>settings.json</code>,
+        so the pattern is visible in the source rather than only described here.
+      </p>
+      <div class="aside note-good">
+        <span class="tag">Two things to do on day one, not later</span>
+        <p>
+          <strong>Put a version number in the file.</strong> A field like
+          <code>"schemaVersion": 1</code> costs nothing today and is the
+          difference between a clean upgrade and guesswork when your format
+          changes in six months.
+        </p>
+        <p>
+          <strong>Decide where the file lives before you need it.</strong> Not next
+          to the program — Part 05 covers why. In Java, the per-user location is
+          built from <code>System.getProperty("user.home")</code>, plus
+          <code>APPDATA</code> on Windows.
+        </p>
+      </div>
+
+      <h3>What your app needs that this one didn't</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>This project</th><th>An Enigma machine</th></tr></thead>
+          <tbody>
+            <tr><td>Daily scheduler, backfill, self-healing</td><td>None of it. Nothing arrives on its own</td></tr>
+            <tr><td>An adapter around an unreliable external service</td><td>Nothing external at all</td></tr>
+            <tr><td>Mock data source for offline development</td><td>Not needed — but the <em>idea</em> still applies to anything slow</td></tr>
+            <tr><td>Refuses to store a NAV it cannot compute</td><td>Refuse an invalid configuration: a letter plugged twice, an unknown rotor</td></tr>
+            <tr><td>Whole-share arithmetic and currency conversion</td><td>Rotor stepping — including the double-stepping anomaly</td></tr>
+            <tr><td>Accumulates an archive that must never be wrong</td><td>Mostly stateless; state is the current machine setting</td></tr>
+            <tr><td>Reads fine as a page of tables</td><td>Wants real interaction: keypress, lamp, animation, undo</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Read the right-hand column and notice how much smaller it is. Your
+        application is not a lesser version of this one; it is a different one
+        that happens to share a delivery mechanism. Most of Parts 03 and 04 are
+        about problems you will not have.
+      </p>
+
+      <h3>One advantage you have that this project never did</h3>
+      <p>
+        Enigma has <strong>known correct answers</strong>. Historical messages with
+        published settings and plaintexts exist, so you can assert that your
+        machine reproduces a documented result. Most projects have to invent their
+        expectations; you can borrow yours from 1941.
+      </p>
+      <p>
+        Better still, the machine has two properties that must hold for
+        <em>every</em> input, which makes them ideal tests:
+      </p>
+      <pre><code>@Test
+void encryptingTheCiphertextGivesBackThePlaintext() {
+    // Enigma is reciprocal: same settings, run it again, get the original.
+    Enigma m1 = Enigma.withSettings(SETTINGS);
+    Enigma m2 = Enigma.withSettings(SETTINGS);
+    String cipher = m1.process("ATTACKATDAWN");
+    assertEquals("ATTACKATDAWN", m2.process(cipher));
+}
+
+@Test
+void noLetterEverEncryptsToItself() {
+    // A real weakness of the machine, and a property your version must share.
+    // If it fails, your reflector wiring is wrong.
+    Enigma m = Enigma.withSettings(SETTINGS);
+    String plain = "AAAAAAAAAAAAAAAAAAAAAAAAA";
+    String cipher = m.process(plain);
+    for (int i = 0; i &lt; plain.length(); i++) {
+        assertNotEquals(plain.charAt(i), cipher.charAt(i));
+    }
+}</code></pre>
+      <p>
+        The second test is worth pausing on. It does not check one expected
+        output; it checks a rule that must hold for any input at all. Tests like
+        that are unusually good at catching wiring mistakes you would never think
+        to write an example for — and they come straight out of understanding the
+        domain, which is the part of this you cannot outsource.
+      </p>
+
+      <h3>What transfers unchanged</h3>
+      <p>None of the following cares what language you chose:</p>
+      <ul>
+        <li>Every problem in Part 05, if you use a shell at all — port, readiness, teardown, single instance, writable paths, the renderer boundary.</li>
+        <li>The packaged program resolves paths differently from the one you develop in. Always. In every ecosystem.</li>
+        <li>Test the artifact you ship, not the one you build.</li>
+        <li>Tests before refactoring; refactoring continuously.</li>
+        <li>Version control from the first commit, a <code>.gitignore</code> written before it, and secrets rotated rather than deleted.</li>
+        <li>Tags, releases, a licence, and a README that serves two audiences.</li>
+      </ul>
+      <p>
+        That is the actual content of this guide. The Python, the market data and
+        the currency arithmetic were the worked example — the vehicle, not the
+        lesson.
+      </p>
+    </section>
+
+    <!-- ============================================ PART 15 -->
+    <section class="part" id="p15">
+      <p class="part-num">Part 15</p>
+      <h2>When you get stuck</h2>
+      <p class="part-intro">
+        You will be stuck for hours at a time. That is not a sign you chose the
+        wrong field; it is the job. What separates people is method, not talent.
+      </p>
+
+      <p>
+        Everything up to here described work that went well, which is a
+        misleading picture. The real experience of building this was long
+        stretches of something not working for reasons that made no sense yet.
+        This part is about what to do during those stretches, because "read the
+        docs" is not advice.
+      </p>
+
+      <h3>First: which kind of stuck is this?</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Symptom</th><th>What it usually means</th><th>First move</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>It crashes with an error</td>
+              <td>The best case — the program is telling you where it is</td>
+              <td>Read the error properly (below)</td>
+            </tr>
+            <tr>
+              <td>It runs but does the wrong thing</td>
+              <td>Your mental model differs from the code's behaviour</td>
+              <td>Print the values; find where reality diverges</td>
+            </tr>
+            <tr>
+              <td>It works here, not there</td>
+              <td>An environment difference: path, version, permission</td>
+              <td>Compare the two environments, not the code</td>
+            </tr>
+            <tr>
+              <td>It works sometimes</td>
+              <td>Timing, ordering, or leftover state</td>
+              <td>Look for anything asynchronous or cached</td>
+            </tr>
+            <tr>
+              <td>Nothing happens at all</td>
+              <td>Your code never ran</td>
+              <td>Print at the top. Confirm it is reached before debugging it</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        That last row sounds too simple to matter and it catches everyone.
+        Before debugging a function, prove it is being called at all.
+      </p>
+
+      <h3>Reading an error message</h3>
+      <p>
+        Stack traces are read from the wrong end by almost every beginner. The
+        top or bottom line names some framework file you have never opened. That
+        is rarely where the problem is.
+      </p>
+      <ol>
+        <li><strong>Find the last line that names a file you wrote.</strong> That is where your code did something the library did not expect.</li>
+        <li><strong>Read the actual sentence.</strong> <code>NoneType has no attribute 'close'</code> means something was <code>None</code> when you expected an object — the message already told you the type.</li>
+        <li><strong>Note the first error, not the last.</strong> One failure usually causes several; scrolling to the bottom shows you consequences, not causes.</li>
+      </ol>
+
+      <h3>Make it smaller</h3>
+      <p>
+        The single most effective technique, and the one people skip because it
+        feels like a detour. A bug in three hundred lines is hard. The same bug in
+        eight lines is usually obvious.
+      </p>
+      <ul>
+        <li><strong>Cut the problem in half.</strong> Comment out half the code. Still broken? The bug is in the half that remains. Repeat. Five rounds narrows a thousand lines to about thirty.</li>
+        <li><strong>Use your history.</strong> If it worked yesterday, <code>git diff</code> against yesterday is a list of suspects — one more reason Part 11 exists.</li>
+        <li><strong>Write the smallest program that reproduces it.</strong> Often the act of writing it reveals the answer before you finish.</li>
+      </ul>
+      <div class="aside note-good">
+        <span class="tag">Print statements are not cheating</span>
+        <p>
+          Debuggers are excellent, and printing values is still the fastest way to
+          answer "what is actually in this variable" most of the time. Print the
+          value <em>and</em> a label, print types when the value looks right but
+          behaves wrong, and print at the boundary between your code and someone
+          else's — that is where assumptions break.
+        </p>
+      </div>
+
+      <h3>Searching for an answer</h3>
+      <p>Most searching fails because of what is pasted into the box.</p>
+      <ul>
+        <li><strong>Paste the error, minus your specifics.</strong> Remove your file paths, variable names and line numbers — they make your problem look unique when it is not.</li>
+        <li><strong>Add the ecosystem.</strong> <code>jpackage</code> alone is ambiguous; <code>jpackage windows app-image error</code> is a question.</li>
+        <li><strong>Say what you wanted, not just what broke</strong>, when the error is generic: "java read json file inside jar" would have solved the resource trap above in one search.</li>
+      </ul>
+      <p>Where to look, roughly in order of reliability:</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Source</th><th>Best for</th><th>Watch out for</th></tr></thead>
+          <tbody>
+            <tr><td>Official documentation</td><td>How something is meant to be used</td><td>Often assumes you already know the surrounding context</td></tr>
+            <tr><td>The project's GitHub issues</td><td>"Is this a known bug?" — search closed ones too</td><td>Threads that end without a resolution</td></tr>
+            <tr><td>Stack Overflow</td><td>Specific errors with specific fixes</td><td>Accepted answers from 2013 for libraries rewritten since</td></tr>
+            <tr><td>Blog posts and tutorials</td><td>Getting oriented in something new</td><td>The most likely to be silently out of date</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Always check the date and the version. A confident answer for version 2 of
+        a library now on version 6 will waste an afternoon, and nothing on the
+        page will warn you.
+      </p>
+
+      <h3>Asking a person, or an assistant</h3>
+      <p>
+        A good question has four parts: what you are trying to do, what you did,
+        what you expected, and what happened instead — with the exact error and
+        the relevant code. Write it out properly; a large share of questions
+        answer themselves somewhere in the third part. That is not a joke, it is
+        the most reliable debugging technique there is.
+      </p>
+      <p>When the assistant is an AI, three habits make it far more useful:</p>
+      <ul>
+        <li><strong>Give it the error text and the code and what you expected.</strong> "It doesn't work" gets you a guess, and a confident one.</li>
+        <li><strong>Ask it to explain, not only to fix.</strong> A patch you do not understand becomes tomorrow's bug, and you will not recognise it.</li>
+        <li><strong>Run what it gives you.</strong> Part 13 is an honest account of an assistant's output looking correct and being wrong. Plausible is not verified — for its code exactly as much as for yours.</li>
+      </ul>
+
+      <div class="aside note-bad">
+        <span class="tag">The one that is hardest to accept</span>
+        <p>
+          When you have been stuck for two hours, stop. Walk away for twenty
+          minutes. This is not motivational filler: past a certain point you stop
+          reading what is on screen and start re-reading what you expect to be
+          there, and no amount of additional staring fixes that.
+        </p>
+        <p>
+          A large fraction of the bugs in this project were found in the first
+          minute after coming back to them.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================ PART 16 -->
+    <section class="part" id="p16">
+      <p class="part-num">Part 16</p>
       <h2>What transfers</h2>
       <p class="part-intro">
         The parts of this that are not about portfolios, Python, or Electron.
@@ -3027,7 +3427,7 @@ git push origin v1.4.0</code></pre>
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.4.0 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.5.0 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.

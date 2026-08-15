@@ -9,6 +9,34 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.5.0
+
+**Added**
+
+- **Closing the window now says so.** Closing hides the app to the tray so the
+  daily 18:00 fetch keeps running — which is deliberate, but an app that
+  ignores the close button without explaining looks either broken or closed.
+  A notification now appears the first time, and the tray tooltip carries the
+  standing reminder. First time only: a message that always appears is a
+  message nobody reads.
+- Settings persist in `settings.json`, written via a temporary file and an
+  atomic rename so a crash mid-write cannot leave an unparseable file.
+- `AppUserModelId` is set explicitly, without which Windows may attribute
+  notifications to "electron.app" or not show them at all.
+
+**Documentation**
+
+- Part 14, building something else: which parts of this architecture are
+  specific to one library constraint and should not be copied, a toolchain
+  translation table for Java and Node, JSON-versus-database trade-offs with
+  the atomic-write pattern, and a worked comparison against an Enigma machine
+  — including the two properties that make it unusually testable.
+- Part 15, when you get stuck: diagnosing which kind of stuck you are in,
+  reading a stack trace from the correct end, halving the problem, searching
+  effectively, and asking a good question.
+
+---
+
 ## v1.4.0
 
 A review-and-consolidate release. No new user-facing capability; the point was

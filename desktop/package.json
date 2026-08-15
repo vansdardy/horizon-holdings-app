@@ -1,7 +1,7 @@
 {
   "name": "horizon-holdings-desktop",
   "productName": "Horizon Holdings",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Desktop shell for the Horizon Holdings portfolio NAV service",
   "author": "Horizon Holdings",
   "main": "main.js",
