@@ -27,7 +27,25 @@ Install/refresh deps:
 .venv/Scripts/pip.exe install -r requirements.txt
 ```
 
-There is **no test suite and no linter config**. The project's testing mechanism is mock mode:
+**Run the tests before and after any change:**
+
+```bash
+.venv/Scripts/python.exe -m pytest tests/ -q
+```
+
+```bash
+node --test tests/js/*.test.js
+```
+
+74 tests, about 8 seconds total. Note the JS invocation: `node --test tests/js` (a bare
+directory) fails under Git Bash with a confusing `Cannot find module` — pass the glob.
+
+Backend tests substitute `db.DB_PATH` per test, which works only because `db.conn()` reads
+the path at call time rather than capturing it at import. The API tests deliberately avoid
+using `TestClient` as a context manager, since entering it runs the app lifespan and starts
+the daily scheduler — making results depend on the time of day.
+
+There is **no linter config**. Beyond the suite, the manual mechanism is mock mode:
 
 ```bash
 MARKETDATA_MOCK=1 .venv/Scripts/python.exe server.py

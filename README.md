@@ -31,6 +31,16 @@ cd desktop && npm install && npm start                # 开发模式运行
 npm run dist                                          # 生成安装包
 ```
 
+跑测试(改代码前后都建议跑一次,总共约 8 秒):
+
+```bash
+.venv/Scripts/python.exe -m pytest tests/ -q     # 52 个后端测试
+node --test tests/js/*.test.js                    # 22 个前端测试,零依赖
+```
+
+> 前端那条命令要用通配符。`node --test tests/js` 这种直接给目录的写法在 Git Bash 下会
+> 报 `Cannot find module`,是路径转换的坑,不是测试本身有问题。
+
 构建过程、设计取舍、发布流程为什么是这样,写在 `docs/building-this-app.html`(应用内也能直接看)。
 
 ---

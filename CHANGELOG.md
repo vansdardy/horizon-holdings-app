@@ -9,6 +9,46 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.4.0
+
+A review-and-consolidate release. No new user-facing capability; the point was
+to make the next change safe rather than to add another one.
+
+**Added**
+
+- **A test suite.** 52 backend tests (pytest) and 22 frontend tests (Node's
+  built-in runner, no dependencies). The most valuable one deliberately
+  reproduces a broken situation: seed the index, remove the price of a held
+  position, and assert the day is *refused* rather than written.
+- `static/lib/portfolio-lib.js` — the page's currency, formatting and timeframe
+  logic, extracted so it can run outside a browser.
+
+**Fixed**
+
+- **First-run import accepted any file.** The tray import validated that the
+  chosen file was really a SQLite database; the first-run path never did, so
+  selecting a PDF copied it over `portfolio.db` and the app then failed to
+  start, with an error several steps from the mistake. Both paths now share one
+  `pickDatabaseFile()`.
+
+**Changed**
+
+- Frontend logic that read hidden page variables now takes its inputs as
+  parameters. The page keeps one-line adapters, so no call site changed — the
+  functions became testable and easier to read at the same time.
+
+**Documentation**
+
+- Part 09, knowing it works: what a test is for, three layers with this
+  project's real proportions, and a section on frontend testing specifically —
+  including why "hard to test" is a fact about the code, not about testing.
+- Part 10, keeping it changeable: why refactoring has to be continuous, the
+  habits that make it cheap, and an argument that design principles are
+  diagnostics to reach for when something hurts, not a syllabus to master
+  before writing anything.
+
+---
+
 ## v1.3.0
 
 **Added**

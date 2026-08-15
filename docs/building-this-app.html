@@ -312,10 +312,12 @@
       <li><a href="#p6"><span class="n">06</span><span>Running on three systems</span></a></li>
       <li><a href="#p7"><span class="n">07</span><span>Build it yourself</span></a></li>
       <li><a href="#p8"><span class="n">08</span><span>Shipping it</span></a></li>
-      <li><a href="#p9"><span class="n">09</span><span>Keeping track of changes</span></a></li>
-      <li><a href="#p10"><span class="n">10</span><span>Getting it to other people</span></a></li>
-      <li><a href="#p11"><span class="n">11</span><span>Building with an AI assistant</span></a></li>
-      <li><a href="#p12"><span class="n">12</span><span>What transfers</span></a></li>
+      <li><a href="#p9"><span class="n">09</span><span>Knowing it works</span></a></li>
+      <li><a href="#p10"><span class="n">10</span><span>Keeping it changeable</span></a></li>
+      <li><a href="#p11"><span class="n">11</span><span>Keeping track of changes</span></a></li>
+      <li><a href="#p12"><span class="n">12</span><span>Getting it to other people</span></a></li>
+      <li><a href="#p13"><span class="n">13</span><span>Building with an AI assistant</span></a></li>
+      <li><a href="#p14"><span class="n">14</span><span>What transfers</span></a></li>
     </ol>
   </nav>
 
@@ -335,8 +337,8 @@
         <span><b>SQLite</b> storage</span>
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
-        <span><b>~2,600</b> lines total</span>
-        <span><b>v1.3.0</b> shipped</span>
+        <span><b>~3,200</b> lines total</span>
+        <span><b>v1.4.0</b> shipped</span>
       </div>
     </header>
 
@@ -1622,6 +1624,445 @@ python -m PyInstaller backend.spec --noconfirm \
     <!-- ============================================ PART 9 -->
     <section class="part" id="p9">
       <p class="part-num">Part 09</p>
+      <h2>Knowing it works</h2>
+      <p class="part-intro">
+        Everything so far was verified by someone running it and looking. That
+        stops scaling almost immediately.
+      </p>
+
+      <p>
+        The question that prompts this part is a good one: an AI assistant wrote
+        most of this code — how does anyone know it does what it claims?
+      </p>
+      <p>
+        The useful move is to notice that the question is not really about AI.
+        Code you wrote yourself six months ago has exactly the same problem: you
+        cannot remember what it was supposed to do, and reading it tells you what
+        it does now, which is the thing under suspicion. "Do I trust the author"
+        is the wrong question, because the honest answer is always no. The
+        question is <em>how would I find out</em>.
+      </p>
+      <p>
+        A test is a second, independent statement of what the code is for. Its
+        value comes from being written separately: when the two disagree, one of
+        them is wrong, and you find out in a second rather than in a year.
+      </p>
+
+      <div class="aside note-good">
+        <span class="tag">The one that matters most here</span>
+        <p>
+          This project's central promise is that a NAV series is never silently
+          wrong. So the most valuable test in the suite deliberately breaks that
+          situation: seed the index, remove the price of a position that is
+          actually held, and assert that the day is <em>refused</em> — no NAV row
+          written, and the error naming the offending ticker.
+        </p>
+        <p>
+          That is a test of a behaviour someone might "fix" later without knowing
+          why it exists. It now fails loudly if they do.
+        </p>
+      </div>
+
+      <h3>Three layers, and honest proportions</h3>
+
+      <figure>
+        <div class="figwrap">
+          <svg viewBox="0 0 900 330" role="img" aria-label="Three testing layers with this project's real counts: 74 pure logic and contract tests running in about seven seconds, a small number of integration checks, and zero automated end-to-end browser tests, which are described as expensive and covered manually instead.">
+            <defs>
+              <marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 10,5 0,9" fill="currentColor"/>
+              </marker>
+            </defs>
+
+            <rect x="120" y="26" width="470" height="66" rx="4" fill="none" class="s-rust" stroke-width="1.6"/>
+            <text x="140" y="52" font-family="monospace" font-size="13" font-weight="600" class="f-rust">end to end</text>
+            <text x="140" y="72" font-family="monospace" font-size="11" class="f-rust" opacity=".85">real browser, real backend, real clicks</text>
+            <text x="610" y="52" font-family="monospace" font-size="12" font-weight="600" class="f-rust">0 here</text>
+            <text x="610" y="72" font-family="monospace" font-size="10.5" fill="currentColor" opacity=".6">minutes to run, brittle</text>
+
+            <rect x="120" y="118" width="470" height="66" rx="4" fill="none" class="s-gold" stroke-width="1.6"/>
+            <text x="140" y="144" font-family="monospace" font-size="13" font-weight="600" class="f-gold">contract</text>
+            <text x="140" y="164" font-family="monospace" font-size="11" class="f-gold" opacity=".85">HTTP in, JSON out — the agreement between halves</text>
+            <text x="610" y="144" font-family="monospace" font-size="12" font-weight="600" class="f-gold">18 tests</text>
+            <text x="610" y="164" font-family="monospace" font-size="10.5" fill="currentColor" opacity=".6">seconds</text>
+
+            <rect x="120" y="210" width="470" height="80" rx="4" fill="none" class="s-teal" stroke-width="1.8"/>
+            <text x="140" y="238" font-family="monospace" font-size="13" font-weight="600" class="f-teal">pure logic</text>
+            <text x="140" y="258" font-family="monospace" font-size="11" class="f-teal" opacity=".85">data in, answer out — no database, no browser</text>
+            <text x="140" y="277" font-family="monospace" font-size="11" class="f-teal" opacity=".85">where most real bugs actually live</text>
+            <text x="610" y="238" font-family="monospace" font-size="12" font-weight="600" class="f-teal">56 tests</text>
+            <text x="610" y="258" font-family="monospace" font-size="10.5" fill="currentColor" opacity=".6">7 seconds, all of them</text>
+
+            <line x1="90" y1="290" x2="90" y2="34" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar6)"/>
+            <text x="74" y="180" font-family="monospace" font-size="10.5" fill="currentColor" opacity=".6" transform="rotate(-90 74 180)" text-anchor="middle">cost per test rises</text>
+          </svg>
+        </div>
+        <figcaption>
+          Real numbers from this project, not an idealised triangle. The bottom
+          layer is nearly free, so there is no reason to be stingy with it; the
+          top layer is expensive enough that "we test that by hand" is a
+          legitimate answer for a single-user application.
+        </figcaption>
+      </figure>
+
+      <h3>Testing the backend</h3>
+      <p>
+        The backend was easy to test, and not by luck — it was already arranged
+        as pure functions over plain data. <code>index_engine</code> takes prices
+        and rates and returns numbers. Nothing to mock, nothing to start.
+      </p>
+      <pre><code>def test_allocation_buys_whole_shares_only(fx, prices):
+    holdings, _ = eng._allocate(1_000_000.0, prices, fx)
+    for ticker, n in holdings.items():
+        assert isinstance(n, int), f"{ticker} got a fractional share count"</code></pre>
+      <p>
+        Two techniques carried most of the weight. First, <strong>fixtures that
+        make the arithmetic checkable by hand</strong>: every currency is worth
+        exactly one dollar and every stock costs exactly ten. Nothing realistic —
+        which is the point, because a failing assertion then points at the logic
+        rather than at a number nobody can verify by reading.
+      </p>
+      <p>
+        Second, <strong>substituting the database path per test</strong>. This
+        works only because <code>db.conn()</code> reads the path when it is
+        called rather than capturing it at import. That was not done for
+        testability, but it is the difference between a suite that isolates
+        cleanly and one that needs a running database.
+      </p>
+
+      <div class="aside note-bad">
+        <span class="tag">One trap in the API tests</span>
+        <p>
+          FastAPI's test client runs the application's startup sequence when used
+          as a context manager — which here starts the daily scheduler. A test
+          suite whose behaviour depends on what time of day it runs is worse than
+          no suite, because it teaches people to ignore failures. The client is
+          deliberately not used that way.
+        </p>
+      </div>
+
+      <h3>Testing the frontend, which is the part nobody explains</h3>
+      <p>
+        The phrase suggests robots clicking buttons, and that impression is most
+        of why people never start. It is worth replacing with something more
+        useful: <strong>look at the bugs frontends actually have.</strong> A
+        currency converted the wrong way. A date window off by one. A missing
+        value rendered as <code>0</code> instead of a dash. None of those are
+        about clicking. They are ordinary function bugs that happen to live in a
+        file the browser loads.
+      </p>
+      <p>So there are three separable things, and they are usually conflated:</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Layer</th><th>What it checks</th><th>Tools</th><th>Worth it?</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Pure logic</strong></td>
+              <td>Formatting, conversion, filtering, calculation</td>
+              <td>Node's built-in runner; no dependencies</td>
+              <td>Always. Cheap and catches most real bugs</td>
+            </tr>
+            <tr>
+              <td><strong>DOM behaviour</strong></td>
+              <td>Clicking this renders that; the empty state appears</td>
+              <td>jsdom, Testing Library</td>
+              <td>Once the interface has real interaction</td>
+            </tr>
+            <tr>
+              <td><strong>End to end</strong></td>
+              <td>The whole app, in a real browser, against a real backend</td>
+              <td>Playwright, Cypress</td>
+              <td>For flows where failure is expensive</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        This project has the first layer and not the other two, deliberately.
+        Adding Playwright means several hundred megabytes of browser binaries and
+        a suite that takes minutes, to test a single-user application whose main
+        flows are exercised by its owner daily. That is a defensible answer — but
+        only when it is a decision, not an omission, which is why it is written
+        down here.
+      </p>
+
+      <h4>The obstacle, and what it was really telling us</h4>
+      <p>
+        The frontend functions could not be tested at first. Not because testing
+        browsers is hard, but because of this:
+      </p>
+      <pre><code>function inBase(usd){          // before
+  if(BASE === 'USD') return usd;
+  const r = FXRATES[BASE];     // BASE and FXRATES are page-level variables
+  return r ? usd / r : null;
+}</code></pre>
+      <p>
+        You cannot call that without recreating the whole page around it, because
+        two of its three inputs are invisible. <strong>"This is hard to test" is
+        almost never a fact about testing. It is a fact about the code</strong> —
+        here, that the function had hidden dependencies.
+      </p>
+      <p>The fix is not clever. Every input becomes a parameter:</p>
+      <pre><code>function inBase(usd, base, fxRates){   // after — same body, visible inputs
+  if(base === 'USD') return usd;
+  const rate = fxRates ? fxRates[base] : null;
+  return rate ? usd / rate : null;
+}</code></pre>
+      <p>
+        Now it is testable, and independently better: a reader can see what it
+        depends on from the signature. The page keeps a one-line adapter
+        (<code>const inBase = usd =&gt; LIB.inBase(usd, BASE, FXRATES)</code>) so
+        not a single call site changed. That last detail is what made the change
+        safe enough to do at all — see the next part.
+      </p>
+      <p>
+        The extracted file uses a small wrapper so a <code>&lt;script&gt;</code>
+        tag and Node's <code>require</code> both work, keeping the project's
+        no-build-step bargain intact. Then the tests are unremarkable, which is
+        the goal:
+      </p>
+      <pre><code>test('a missing rate yields null, never zero', () =&gt; {
+  // Zero is a number a reader would believe. Absence has to look like absence.
+  assert.equal(lib.inBase(100, 'CHF', {}), null);
+});</code></pre>
+
+      <h3>What to test, and what not to</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Worth testing</th><th>Not worth testing</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Rules that would be expensive to get wrong</td>
+              <td>That a framework does what its docs say</td>
+            </tr>
+            <tr>
+              <td>Anything with edge cases: null, zero, empty, boundaries</td>
+              <td>Getters, setters, code with no decisions in it</td>
+            </tr>
+            <tr>
+              <td>Behaviour someone might "helpfully" undo later</td>
+              <td>Exact wording and pixel positions, which change for cosmetic reasons</td>
+            </tr>
+            <tr>
+              <td>Every bug you fix — one test, so it stays fixed</td>
+              <td>Anything you would delete rather than repair</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="aside note-bad">
+        <span class="tag">A test that has never failed has proved nothing</span>
+        <p>
+          A test can pass because the code is right, or because the test asserts
+          nothing. The two look identical from the outside. Break the code on
+          purpose once and watch it go red — that, not the green run, is the
+          moment it starts being worth something.
+        </p>
+        <p>
+          Writing this suite produced a small example of the same principle in
+          reverse: one test failed because <code>105/100 - 1</code> is
+          <code>0.050000000000000044</code> in binary floating point. The code was
+          correct; the test was wrong to compare computed floats exactly. That is
+          a normal outcome and not a wasted hour.
+        </p>
+      </div>
+
+      <pre><code>python -m pytest tests/ -q            # 52 backend tests, about 7 seconds
+node --test tests/js/*.test.js       # 22 frontend tests, under a second</code></pre>
+    </section>
+
+    <!-- ============================================ PART 10 -->
+    <section class="part" id="p10">
+      <p class="part-num">Part 10</p>
+      <h2>Keeping it changeable</h2>
+      <p class="part-intro">
+        Code does not rot on its own. It rots because each change is made in a
+        hurry, in the shape the last change left behind.
+      </p>
+
+      <p>
+        <strong>Refactoring means changing how code is arranged without changing
+        what it does.</strong> The second half is the load-bearing part. Rewriting
+        a function and also fixing a bug in it is not refactoring; it is two
+        changes wearing one coat, and when something breaks you will not know
+        which one did it.
+      </p>
+
+      <h3>Why it has to be continuous</h3>
+      <p>
+        This project has been shipping quickly, and the cost showed up exactly
+        where you would expect. Importing a database ended up implemented twice:
+        once for the first run, once for the tray menu added later. The second
+        one validated that the chosen file was actually a SQLite database. The
+        first one never did.
+      </p>
+      <p>
+        So at first run you could select a PDF, and the app would copy it over
+        <code>portfolio.db</code> and then fail to start — with an error about the
+        backend, several steps away from the actual mistake. Nobody decided that.
+        It is what happens when the same job exists in two places and only one of
+        them gets fixed.
+      </p>
+      <div class="aside note-good">
+        <span class="tag">The repair, and why it is small</span>
+        <p>
+          One function, <code>pickDatabaseFile()</code>, that asks for a file and
+          refuses anything without the SQLite header. Both paths call it. The
+          duplicate check is gone and there is now one place where this rule
+          lives, so the next fix cannot reach only half the application.
+        </p>
+      </div>
+
+      <h3>The prerequisite nobody can skip</h3>
+      <p>
+        Refactoring without tests is not refactoring. It is editing code and
+        hoping, because the entire claim — "behaviour is unchanged" — is exactly
+        the thing you have no way to check.
+      </p>
+      <p>
+        This is why the previous part comes first. Both of today's refactors were
+        done in the same order: write tests describing current behaviour, change
+        the structure, run the tests. When 74 of them still pass, "I did not
+        break anything" is a statement with something behind it.
+      </p>
+
+      <h3>Four habits that make it cheap</h3>
+      <ol>
+        <li>
+          <strong>Move the body, keep the name.</strong> The frontend extraction
+          touched zero call sites, because the page kept one-line adapters with
+          the original names. A refactor that forces you to edit two hundred lines
+          is a refactor you will not do; one that forces you to edit three is one
+          you will do on a Tuesday.
+        </li>
+        <li>
+          <strong>One kind of change per commit.</strong> Structure or behaviour,
+          never both. Then a bisect points at something meaningful, and a review
+          is readable.
+        </li>
+        <li>
+          <strong>Rename first.</strong> Renaming is the safest refactor and often
+          the most valuable — half of "this code is confusing" is things being
+          called the wrong thing. It also makes the next step obvious.
+        </li>
+        <li>
+          <strong>Small enough to abandon.</strong> If a refactor cannot be thrown
+          away after twenty minutes without losing real work, it is too big. Split
+          it.
+        </li>
+      </ol>
+
+      <h3>When to do it, and when to leave it alone</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Refactor when</th><th>Leave it when</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>You are about to add something and the shape fights you</td>
+              <td>It is ugly but you have no concrete complaint</td>
+            </tr>
+            <tr>
+              <td>The same logic exists in three places (two is a coincidence)</td>
+              <td>The code is about to be deleted anyway</td>
+            </tr>
+            <tr>
+              <td>You had to explain it out loud to understand it</td>
+              <td>Nobody has touched it in a year and it works</td>
+            </tr>
+            <tr>
+              <td>A bug appeared because two copies disagreed</td>
+              <td>You have no tests and no time to write any</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The last row on the right is not an excuse to never refactor — it is a
+        statement about ordering. Write the test first, then refactor. If neither
+        is affordable today, leave the code alone and be honest that you are
+        choosing to.
+      </p>
+
+      <h3>Principles, and why learning them first backfires</h3>
+      <p>
+        There is a canon here — single responsibility, interface segregation,
+        Liskov substitution, dependency inversion, and a shelf of patterns with
+        names like Observer and Factory. They are genuinely useful. They are also
+        one of the most reliable ways to stop a person from writing any code at
+        all, and that failure deserves a straight answer rather than a reading
+        list.
+      </p>
+      <p>
+        Here is what those names actually are: <strong>compressed descriptions of
+        pain that experienced people already felt.</strong> Someone changed a class
+        for the fourth unrelated reason, got annoyed, and named the annoyance
+        "single responsibility". The principle is the <em>label on the scar</em>,
+        not the plan that prevented it.
+      </p>
+      <p>
+        Learning them as a checklist inverts the order, and the result is exactly
+        the paralysis people describe. You sit down to write a feature and find
+        yourself designing for problems you do not have, evaluating six patterns
+        for a function that will be forty lines, trying to hold the entire system
+        and every detail in your head simultaneously. That is not rigour. It is a
+        thinking task that has been made artificially impossible.
+      </p>
+
+      <div class="aside note-good">
+        <span class="tag">The order that works</span>
+        <p>
+          <strong>Write the simplest thing that works. Notice a specific pain.
+          Then let the principle name the fix.</strong>
+        </p>
+        <p>
+          The pain always arrives as a concrete sentence, never as a principle:
+          "I can't test this without starting a browser." "I changed the price
+          format and the tray broke." "There are two of these and I fixed one."
+          Each of those has a well-known answer, and you will find it far faster
+          when you already know which problem you have.
+        </p>
+      </div>
+
+      <p>
+        Today's frontend extraction is a clean illustration. Its result satisfies
+        single responsibility and dependency inversion — the logic no longer knows
+        where its inputs come from. At no point did anyone think either phrase.
+        The trigger was: <em>I cannot test this function because two of its inputs
+        are invisible.</em> The principles describe the outcome accurately, and
+        would have contributed nothing to reaching it.
+      </p>
+      <p>
+        A modest set is worth internalising early, because each is a sentence
+        rather than a framework:
+      </p>
+      <ul>
+        <li><strong>Make inputs visible.</strong> A function that reads hidden state is hard to test, reuse, and reason about.</li>
+        <li><strong>One reason to change.</strong> If two unrelated requirements edit the same function, they will eventually collide.</li>
+        <li><strong>Two is coincidence, three is a pattern.</strong> Do not abstract on the second occurrence; you cannot see the shape yet.</li>
+        <li><strong>You are not going to need it.</strong> Speculative flexibility is the most expensive kind, because you pay for it before knowing if it was the right shape.</li>
+      </ul>
+      <p>
+        And one exception worth respecting: principles <em>do</em> pay upfront at
+        boundaries you cannot change later. A database schema, a file format, a
+        public API, anything already on other people's machines. Inside a
+        function, refactor freely. At a boundary, think first — because there the
+        cost of being wrong is not a refactor, it is a migration.
+      </p>
+      <p>
+        If you have previously given up because software felt like it required
+        holding everything at once: it does not, and the people who look like they
+        are doing that are not. They are writing something simple, noticing what
+        hurts, and fixing that one thing — which is a much smaller task, and the
+        only one anybody actually performs.
+      </p>
+    </section>
+
+    <!-- ============================================ PART 11 -->
+    <section class="part" id="p11">
+      <p class="part-num">Part 11</p>
       <h2>Keeping track of changes</h2>
       <p class="part-intro">
         Two people need to know what changed — whoever uses your app, and you.
@@ -2052,8 +2493,8 @@ git check-ignore -v secrets.txt # WHICH rule is skipping this file?</code></pre>
     </section>
 
     <!-- ============================================ PART 10 -->
-    <section class="part" id="p10">
-      <p class="part-num">Part 10</p>
+    <section class="part" id="p12">
+      <p class="part-num">Part 12</p>
       <h2>Getting it to other people</h2>
       <p class="part-intro">
         A public repository serves two audiences who want completely different
@@ -2237,8 +2678,8 @@ ssh -T git@github.com                        # should greet you by username</cod
         what lets you look at exactly the code they are running, months later,
         after everything has moved on.
       </p>
-      <pre><code>git tag -a v1.2.0 -m "Import at any time; git and distribution docs"
-git push origin v1.2.0</code></pre>
+      <pre><code>git tag -a v1.4.0 -m "Tests, refactoring, and the docs for both"
+git push origin v1.4.0</code></pre>
       <p>
         The convention is a <code>v</code> prefix on the version number, and the
         tag should point at the commit you actually built the installer from — not
@@ -2277,7 +2718,7 @@ git push origin v1.2.0</code></pre>
           <div>
             <h3>Tag and push</h3>
             <pre><code>git push origin main
-git push origin v1.2.0</code></pre>
+git push origin v1.4.0</code></pre>
           </div>
         </li>
         <li>
@@ -2286,9 +2727,9 @@ git push origin v1.2.0</code></pre>
             <p>
               On the web, or in one command if you have the GitHub CLI:
             </p>
-            <pre><code>gh release create v1.2.0 \
-  "build/desktop-dist/Horizon Holdings Setup 1.2.0.exe" \
-  --title "v1.2.0" --notes-file RELEASE_NOTES.md</code></pre>
+            <pre><code>gh release create v1.4.0 \
+  "build/desktop-dist/Horizon Holdings Setup 1.4.0.exe" \
+  --title "v1.4.0" --notes-file CHANGELOG.md</code></pre>
           </div>
         </li>
       </ol>
@@ -2396,8 +2837,8 @@ git push origin v1.2.0</code></pre>
     </section>
 
     <!-- ============================================ PART 11 -->
-    <section class="part" id="p11">
-      <p class="part-num">Part 11</p>
+    <section class="part" id="p13">
+      <p class="part-num">Part 13</p>
       <h2>Building with an AI assistant</h2>
       <p class="part-intro">
         This application was built with one. That is worth being specific about,
@@ -2409,6 +2850,14 @@ git push origin v1.2.0</code></pre>
         instructions, running commands, reading the output, and fixing what it
         found. The interesting question is not whether that works — it plainly
         does — but <em>where</em> it works and where it does not.
+      </p>
+      <p>
+        The obvious follow-up — <em>then how does anyone know it does what it
+        claims?</em> — has an answer that has nothing to do with AI, and it is
+        Part 09. You find out the same way you find out about code you wrote
+        yourself and have since forgotten: by writing down what it is supposed to
+        do, separately, and checking. "Who wrote it" changes how suspicious you
+        feel. It does not change the method.
       </p>
 
       <h3>Where it genuinely helped</h3>
@@ -2497,7 +2946,7 @@ git push origin v1.2.0</code></pre>
         once you state the goal. It cannot tell you what the goal should be.
       </p>
 
-      <h3>Why this makes Part 09 more important, not less</h3>
+      <h3>Why this makes Part 11 more important, not less</h3>
       <p>
         Working this way, changes arrive faster and in larger pieces than when
         typing every line yourself. Four files can change in a minute. That is
@@ -2513,8 +2962,8 @@ git push origin v1.2.0</code></pre>
     </section>
 
     <!-- ============================================ PART 12 -->
-    <section class="part" id="p12">
-      <p class="part-num">Part 12</p>
+    <section class="part" id="p14">
+      <p class="part-num">Part 14</p>
       <h2>What transfers</h2>
       <p class="part-intro">
         The parts of this that are not about portfolios, Python, or Electron.
@@ -2578,7 +3027,7 @@ git push origin v1.2.0</code></pre>
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.3.0 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.4.0 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.

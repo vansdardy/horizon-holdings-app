@@ -835,6 +835,11 @@ _VENDOR = os.path.join(STATIC, "vendor")
 if os.path.isdir(_VENDOR):
     app.mount("/vendor", StaticFiles(directory=_VENDOR), name="vendor")
 
+# Same relative-path trick as /vendor, for the page's own extracted logic.
+_LIB = os.path.join(STATIC, "lib")
+if os.path.isdir(_LIB):
+    app.mount("/lib", StaticFiles(directory=_LIB), name="lib")
+
 if os.path.isdir(STATIC):
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

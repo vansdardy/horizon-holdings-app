@@ -107,6 +107,50 @@ function copyDatabaseFiles(source, target) {
 }
 
 /**
+ * Every SQLite file begins with this exact string. Reading sixteen bytes costs
+ * nothing and prevents the worst thing an import can do: replace a working
+ * database with a file the backend cannot open, leaving the app unable to start
+ * at all.
+ *
+ * This check lived inline in the import flow and was simply absent from the
+ * first-run path — so at first run any file could be copied into place, and the
+ * failure appeared later as a backend that would not boot. Two paths doing the
+ * same job, one of which had been fixed. One implementation now.
+ */
+function isSqliteDatabase(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const header = Buffer.alloc(16);
+    fs.readSync(fd, header, 0, 16, 0);
+    fs.closeSync(fd);
+    return header.toString('utf8').startsWith('SQLite format 3');
+  } catch (err) {
+    log(`could not read ${filePath}: ${err.message}`);
+    return false;
+  }
+}
+
+/** Ask for a database file, rejecting anything that is not one. Null if declined. */
+async function pickDatabaseFile() {
+  const picked = await dialog.showOpenDialog({
+    title: '选择 portfolio.db / Select a portfolio.db',
+    properties: ['openFile'],
+    filters: [{ name: 'SQLite database', extensions: ['db'] }],
+  });
+  if (picked.canceled || !picked.filePaths.length) return null;
+
+  const file = picked.filePaths[0];
+  if (!isSqliteDatabase(file)) {
+    dialog.showErrorBox(
+      '这不是一个 SQLite 数据库 / Not a SQLite database',
+      `${file}\n\n文件头不匹配,已取消 —— 当前数据未被改动。\n`
+      + 'The file header does not match. Cancelled; nothing was changed.');
+    return null;
+  }
+  return file;
+}
+
+/**
  * Stop the backend and wait for the process to actually be gone.
  *
  * stopBackend() only sends the kill; on Windows the file handle survives for a
@@ -180,18 +224,15 @@ async function ensureDatabase(userData) {
     return true;
   }
 
-  const picked = await dialog.showOpenDialog({
-    title: 'Select portfolio.db',
-    properties: ['openFile'],
-    filters: [{ name: 'SQLite database', extensions: ['db'] }],
-  });
-  if (picked.canceled || !picked.filePaths.length) {
-    // Backing out of the file picker is not a request to start a new series
-    // either. Quit; relaunching brings the prompt straight back.
-    log('import cancelled; quitting without creating a database');
+  const file = await pickDatabaseFile();
+  if (!file) {
+    // Backing out of the picker — or choosing something that is not a database
+    // — is not a request to start a new series either. Quit; relaunching brings
+    // the prompt straight back.
+    log('no database chosen; quitting without creating one');
     return false;
   }
-  copyDatabaseFiles(picked.filePaths[0], target);
+  copyDatabaseFiles(file, target);
   return true;
 }
 
@@ -208,34 +249,8 @@ async function ensureDatabase(userData) {
  * the file is not held open, swaps, restarts, and reloads the window.
  */
 async function importDatabaseNow(userData) {
-  const picked = await dialog.showOpenDialog({
-    title: '选择要导入的 portfolio.db / Select a portfolio.db to import',
-    properties: ['openFile'],
-    filters: [{ name: 'SQLite database', extensions: ['db'] }],
-  });
-  if (picked.canceled || !picked.filePaths.length) return false;
-  const source = picked.filePaths[0];
-
-  // Every SQLite file begins with this exact string. Checking it costs nothing
-  // and prevents the worst outcome here: the original replaced by a file the
-  // backend then cannot open, leaving the app unable to start at all.
-  let header = '';
-  try {
-    const fd = fs.openSync(source, 'r');
-    const buf = Buffer.alloc(16);
-    fs.readSync(fd, buf, 0, 16, 0);
-    fs.closeSync(fd);
-    header = buf.toString('utf8');
-  } catch (e) {
-    header = '';
-  }
-  if (!header.startsWith('SQLite format 3')) {
-    dialog.showErrorBox(
-      '这不是一个 SQLite 数据库 / Not a SQLite database',
-      `${source}\n\n文件头不匹配,已取消 —— 当前数据未被改动。\n`
-      + 'The file header does not match. Cancelled; nothing was changed.');
-    return false;
-  }
+  const source = await pickDatabaseFile();
+  if (!source) return false;
 
   const target = path.join(userData, 'portfolio.db');
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);

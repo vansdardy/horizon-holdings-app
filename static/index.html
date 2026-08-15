@@ -9,6 +9,7 @@
      purpose — it resolves to /vendor when the backend serves this page at /,
      and to static/vendor when the file is opened straight from disk. -->
 <script src="vendor/chart.umd.min.js"></script>
+<script src="lib/portfolio-lib.js"></script>
 <script>
 // If the chart library fails to load for any reason, `Chart` never gets defined.
 // Without a stub, the FIRST `Chart.defaults...` line or `new Chart(...)` call
@@ -654,20 +655,23 @@ const EXCHANGE_INFO = {
 function exchInfo(raw){
   return EXCHANGE_INFO[raw] || { name: raw, ibkr: null, verified: false };
 }
-// Chinese finance convention: 静态市盈率(trailing, based on actual reported
-// earnings) vs 动态市盈率(forward, based on analyst estimates) — these can
-// differ by multiples for a richly-valued name, so the label always accompanies
-// the number rather than a bare "实时" badge that doesn't say which one.
-function peTypeLabel(t){
-  return t === 'trailing' ? '静态' : t === 'forward' ? '动态' : t === 'computed' ? '现算' : '';
-}
 const DATA_BY_TICKER = Object.fromEntries(DATA.map(d => [d.t, d]));
 
 // Currency formatting helpers — defined early so both the ticker tape and
 // the positions section can use them regardless of load order.
-const CCY_SYMBOL = { USD:'$', CAD:'C$', CHF:'CHF ', EUR:'€', GBP:'£', JPY:'¥', DKK:'kr ' };
-const sym = c => CCY_SYMBOL[c] || (c + ' ');
-const noDecimals = c => c === 'JPY';
+// Bound to lib/portfolio-lib.js, where these live as pure functions so they can
+// be tested outside a browser. The three that depend on page state are wrapped
+// here rather than threaded through every call site — moving the bodies out was
+// the whole change; the names and their signatures stayed put.
+const LIB = window.PortfolioLib;
+const CCY_SYMBOL  = LIB.CCY_SYMBOL;
+const sym         = LIB.sym;
+const noDecimals  = LIB.noDecimals;
+const fmtShares   = LIB.fmtShares;
+const peTypeLabel = LIB.peTypeLabel;
+const inBase      = usd  => LIB.inBase(usd, BASE, FXRATES);
+const moneyBase   = usd  => LIB.moneyBase(usd, BASE, FXRATES);
+const sliceTF     = hist => LIB.sliceTF(hist, TF);
 
 // EFFECTIVE_DATA mirrors DATA but with pe/dy/beta overridden by live quarterly
 // fundamentals where available, falling back to the static estimate otherwise.
@@ -996,28 +1000,6 @@ const money = (v, ccy) => (v == null) ? '—'
   : (ccy === 'JPY' ? Math.round(v).toLocaleString()
      : v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}));
 
-// FXRATES[c] = USD per 1 unit of c. USD is the wire currency for every amount
-// the API returns, so converting to the chosen reporting currency is a divide.
-function inBase(usd){
-  if(usd == null) return null;
-  if(BASE === 'USD') return usd;
-  const r = FXRATES[BASE];
-  return r ? usd / r : null;
-}
-function moneyBase(usd){
-  const v = inBase(usd);
-  if(v == null) return '—';
-  const d = noDecimals(BASE) ? 0 : 2;
-  return sym(BASE) + v.toLocaleString(undefined, {minimumFractionDigits:d, maximumFractionDigits:d});
-}
-// Share counts may be fractional (many brokers support fractional investing),
-// so show enough precision without padding whole numbers with noise.
-function fmtShares(v){
-  if(v == null) return '—';
-  return Number.isInteger(v) ? String(v)
-       : v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:6});
-}
-
 async function api(path, opts){
   const res = await fetch(API + path, opts);
   if(!res.ok){
@@ -1078,24 +1060,6 @@ async function loadNav(){
     }
     renderNav();
   }catch(e){ $('navResults').style.display='none'; }
-}
-
-// Trim the series to the selected window. Returns to it unchanged for ALL.
-function sliceTF(hist){
-  if(TF === 'ALL' || !hist.length) return hist;
-  const last = new Date(hist[hist.length-1].date + 'T00:00:00');
-  let from;
-  if(TF === 'YTD'){
-    from = new Date(last.getFullYear(), 0, 1);
-  } else {
-    const n = parseInt(TF, 10);
-    from = new Date(last);
-    if(TF.endsWith('M')) from.setMonth(from.getMonth() - n);
-    else from.setFullYear(from.getFullYear() - n);
-  }
-  const iso = from.toISOString().slice(0,10);
-  const out = hist.filter(h => h.date >= iso);
-  return out.length ? out : hist;
 }
 
 function renderNav(){
