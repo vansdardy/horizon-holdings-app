@@ -9,6 +9,27 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.5.1
+
+No functional change. Part 14 of the guide was written with one specific
+future project in mind and had over-fitted to it — two of its sections were
+effectively a tutorial for that one app rather than a method anyone could
+apply. Corrected:
+
+- The "what does your app need" table now compares four sketch application
+  types (tracker, editor, instrument, batch tool) instead of one, and asks the
+  reader to write their own column. Only one row is true for all four, which
+  makes the point better than any single example could.
+- The section on domain invariants is now general — what a property is, why it
+  catches cases examples never will, a table across seven domains, and the
+  name (property-based testing) plus libraries to look up. The worked example
+  is this project's own conservation-of-money test rather than borrowed from
+  elsewhere.
+- The packaged-resource trap keeps its Java illustration but now names the
+  .NET, Go and Node equivalents, plus the search terms to find your own.
+
+---
+
 ## v1.5.0
 
 **Added**

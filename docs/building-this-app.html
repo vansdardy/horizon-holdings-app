@@ -340,7 +340,7 @@
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
         <span><b>~3,400</b> lines total</span>
-        <span><b>v1.5.0</b> shipped</span>
+        <span><b>v1.5.1</b> shipped</span>
       </div>
     </header>
 
@@ -2989,7 +2989,7 @@ git push origin v1.4.0</code></pre>
         </p>
         <p>
           Remove that one constraint and most of this architecture stops being
-          justified. <strong>An Enigma machine has no such constraint.</strong>
+          justified. <strong>Most applications do not have one.</strong>
         </p>
       </div>
 
@@ -3028,18 +3028,21 @@ git push origin v1.4.0</code></pre>
       </div>
 
       <p>
-        For an Enigma machine — rotors, a reflector, a plugboard, a keyboard and a
-        lampboard — every row except the first is reasonable, and the first is
-        not. There is no library you cannot write yourself; the machine <em>is</em>
-        the exercise. Choosing "Java backend + Electron" because this guide did it
-        would be copying an answer to a question you do not have.
+        Work out which row is yours with one question: <em>is there a library I
+        cannot replace, and what language is it written in?</em> An app that
+        transcribes speech, reads a proprietary file format, or drives a specific
+        piece of hardware almost certainly has one, and it decides the rest. A
+        calculator, a text editor, a puzzle game, a drawing tool, a simulator of
+        some machine — these usually do not, and for them the first row is an
+        expensive way to build what the second row builds in half the time.
       </p>
       <p>
-        Choose deliberately. If the goal is to learn Java, row three or four. If
-        the goal is the shortest path to a working app, row two. If the goal is
-        specifically to repeat this guide end to end, row three is the honest
-        version of that, and you should know you are paying for the lesson rather
-        than for the architecture.
+        Then choose deliberately, and know which thing you are buying. Shortest
+        path to something working: row two. Learning a specific language: row
+        three or four. Wanting to follow this guide end to end because the
+        two-process shape is what you want to practise: row three — which is
+        legitimate, as long as you know you are paying for the lesson and not for
+        the architecture.
       </p>
 
       <h3>Translating the toolchain</h3>
@@ -3070,17 +3073,24 @@ git push origin v1.4.0</code></pre>
           and fails the moment you build a jar:
         </p>
         <pre><code>// Works in the IDE. Throws FileNotFoundException from a jar.
-Scanner s = new Scanner(new File("rotors.json"));
+Scanner s = new Scanner(new File("presets.json"));
 
 // Works in both.
-InputStream in = getClass().getResourceAsStream("/rotors.json");</code></pre>
+InputStream in = getClass().getResourceAsStream("/presets.json");</code></pre>
         <p>
           This is the exact same shape as the PyInstaller path bug in Part 05, and
-          the exact same shape as the missing preload file in the same part:
-          <strong>the packaged program has a different idea of where things are
-          than the one you develop in.</strong> Different language, different tool,
-          identical trap — which is why Part 08's rule is worth carrying with you:
-          run the packaged artifact, not just the one in your editor.
+          as the missing preload file in the same part: <strong>the packaged
+          program has a different idea of where things are than the one you
+          develop in.</strong> Different language, different tool, identical trap.
+        </p>
+        <p>
+          Every ecosystem has its own version, so find yours before you need it.
+          In .NET it is embedded resources versus a relative path; in Go it is the
+          <code>embed</code> package versus reading from disk; in Node it is
+          <code>__dirname</code> inside an asar archive. The search that finds it
+          is "&lt;your language&gt; read bundled resource file packaged", and the
+          hour to do that now is much cheaper than the hour spent later wondering
+          why the installer produces a program that cannot find its own data.
         </p>
       </div>
 
@@ -3139,66 +3149,128 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
         </p>
       </div>
 
-      <h3>What your app needs that this one didn't</h3>
+      <h3>Working out what your app actually needs</h3>
+      <p>
+        A guide built around one application makes its problems look universal.
+        They are not. The practical exercise is to go through what this project
+        does, and cross off everything you do not need — the list that remains is
+        your actual scope, and it is usually much shorter than you feared.
+      </p>
+      <p>
+        Four sketch applications, to show how differently that comes out:
+      </p>
+
       <div class="tablewrap">
         <table>
-          <thead><tr><th>This project</th><th>An Enigma machine</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Tracker<br><span style="font-weight:400">(this app)</span></th>
+              <th>Editor<br><span style="font-weight:400">notes, docs</span></th>
+              <th>Instrument<br><span style="font-weight:400">simulator, calculator</span></th>
+              <th>Batch tool<br><span style="font-weight:400">image, video</span></th>
+            </tr>
+          </thead>
           <tbody>
-            <tr><td>Daily scheduler, backfill, self-healing</td><td>None of it. Nothing arrives on its own</td></tr>
-            <tr><td>An adapter around an unreliable external service</td><td>Nothing external at all</td></tr>
-            <tr><td>Mock data source for offline development</td><td>Not needed — but the <em>idea</em> still applies to anything slow</td></tr>
-            <tr><td>Refuses to store a NAV it cannot compute</td><td>Refuse an invalid configuration: a letter plugged twice, an unknown rotor</td></tr>
-            <tr><td>Whole-share arithmetic and currency conversion</td><td>Rotor stepping — including the double-stepping anomaly</td></tr>
-            <tr><td>Accumulates an archive that must never be wrong</td><td>Mostly stateless; state is the current machine setting</td></tr>
-            <tr><td>Reads fine as a page of tables</td><td>Wants real interaction: keypress, lamp, animation, undo</td></tr>
+            <tr><td>Runs work on a schedule</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
+            <tr><td>Talks to an external service</td><td>yes</td><td>maybe (sync)</td><td>no</td><td>no</td></tr>
+            <tr><td>Fake data source for offline work</td><td>yes</td><td>no</td><td>no</td><td>sample inputs</td></tr>
+            <tr><td>Accumulates history that must stay correct</td><td>yes</td><td>the documents</td><td>no</td><td>no</td></tr>
+            <tr><td>Refuses invalid input rather than guessing</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+            <tr><td>Non-trivial domain arithmetic</td><td>yes</td><td>no</td><td>yes — the whole point</td><td>yes</td></tr>
+            <tr><td>Real-time interaction, undo</td><td>no</td><td>yes</td><td>yes</td><td>no</td></tr>
+            <tr><td>Long operations needing progress and cancel</td><td>no</td><td>no</td><td>no</td><td>yes — the hard part</td></tr>
+            <tr><td>Opens and saves user-chosen files</td><td>no</td><td>yes</td><td>settings only</td><td>yes</td></tr>
           </tbody>
         </table>
       </div>
-      <p>
-        Read the right-hand column and notice how much smaller it is. Your
-        application is not a lesser version of this one; it is a different one
-        that happens to share a delivery mechanism. Most of Parts 03 and 04 are
-        about problems you will not have.
-      </p>
 
-      <h3>One advantage you have that this project never did</h3>
       <p>
-        Enigma has <strong>known correct answers</strong>. Historical messages with
-        published settings and plaintexts exist, so you can assert that your
-        machine reproduces a documented result. Most projects have to invent their
-        expectations; you can borrow yours from 1941.
+        Only one row is true everywhere, and it is the one this whole project is
+        organised around: <strong>refuse invalid input rather than guessing.</strong>
+        The rest varies enormously — which is the point. An instrument needs
+        almost nothing from Part 03 but everything from the testing part. A batch
+        tool needs a concern this project never had at all: work that takes
+        minutes, reports progress, and can be cancelled without corrupting
+        anything.
       </p>
-      <p>
-        Better still, the machine has two properties that must hold for
-        <em>every</em> input, which makes them ideal tests:
-      </p>
-      <pre><code>@Test
-void encryptingTheCiphertextGivesBackThePlaintext() {
-    // Enigma is reciprocal: same settings, run it again, get the original.
-    Enigma m1 = Enigma.withSettings(SETTINGS);
-    Enigma m2 = Enigma.withSettings(SETTINGS);
-    String cipher = m1.process("ATTACKATDAWN");
-    assertEquals("ATTACKATDAWN", m2.process(cipher));
-}
+      <div class="aside note-good">
+        <span class="tag">Do this before writing code</span>
+        <p>
+          Write your own version of that column. Every "no" is a whole section of
+          this guide you can skip, and every "yes" tells you which part to read
+          properly. A first project fails far more often from building things it
+          did not need than from missing something.
+        </p>
+      </div>
 
-@Test
-void noLetterEverEncryptsToItself() {
-    // A real weakness of the machine, and a property your version must share.
-    // If it fails, your reflector wiring is wrong.
-    Enigma m = Enigma.withSettings(SETTINGS);
-    String plain = "AAAAAAAAAAAAAAAAAAAAAAAAA";
-    String cipher = m.process(plain);
-    for (int i = 0; i &lt; plain.length(); i++) {
-        assertNotEquals(plain.charAt(i), cipher.charAt(i));
-    }
-}</code></pre>
+      <h3>Find the rules your domain already guarantees</h3>
       <p>
-        The second test is worth pausing on. It does not check one expected
-        output; it checks a rule that must hold for any input at all. Tests like
-        that are unusually good at catching wiring mistakes you would never think
-        to write an example for — and they come straight out of understanding the
-        domain, which is the part of this you cannot outsource.
+        Most tests check one example: given this input, expect that output. They
+        are useful, and they only ever cover cases you thought of. There is a
+        second kind worth learning early, because it covers cases you did not.
       </p>
+      <p>
+        Look for statements that must be true for <em>every</em> input. Almost
+        every domain has some, and they usually fall out of understanding the
+        problem rather than the code. This project has one, and it is the test
+        most likely to catch a rounding mistake anywhere in the allocation logic:
+      </p>
+      <pre><code>def test_allocation_residual_is_kept_as_cash(fx, prices):
+    """Nothing may be lost to rounding: shares + cash must equal what went in."""
+    holdings, cash = eng._allocate(nav, prices, fx)
+
+    equity = sum(prices[t] * n for t, n in holdings.items())
+    residual = sum(cash.values())
+    assert equity + residual == pytest.approx(nav)</code></pre>
+      <p>
+        Note what it does <em>not</em> say: it never states how many shares of
+        anything to expect. It says money is conserved. That single assertion
+        holds for any portfolio, any prices, any weights — and it fails loudly if
+        someone later rewrites the rounding.
+      </p>
+      <p>Rules of this kind are everywhere once you start looking:</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Domain</th><th>Something true for every input</th></tr></thead>
+          <tbody>
+            <tr><td>Anything that saves and loads</td><td><code>load(save(x))</code> equals <code>x</code></td></tr>
+            <tr><td>Compression, encoding, serialisation</td><td><code>decode(encode(x))</code> equals <code>x</code></td></tr>
+            <tr><td>Unit or currency conversion</td><td>Converting there and back returns the original, within tolerance</td></tr>
+            <tr><td>Sorting, ranking, filtering</td><td>The output is a rearrangement of the input — nothing invented, nothing lost</td></tr>
+            <tr><td>Reciprocal ciphers</td><td>Applying it twice returns the original; some also guarantee no symbol maps to itself</td></tr>
+            <tr><td>Undo in an editor</td><td>Do then undo leaves the document byte-identical</td></tr>
+            <tr><td>Any billing or totals</td><td>The parts sum to the whole, at every level</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        This is called <strong>property-based testing</strong>, and libraries exist
+        that generate hundreds of random inputs to attack your properties for you:
+        Hypothesis for Python, jqwik for Java, fast-check for JavaScript. You do
+        not need them to start — a loop over a handful of inputs already catches a
+        great deal — but knowing the name means you can find the tools when a
+        property turns out to be worth hammering.
+      </p>
+      <div class="aside note-good">
+        <span class="tag">Check whether someone has already published the answers</span>
+        <p>
+          Some domains come with reference results you can test against instead of
+          inventing your own: standard test vectors for ciphers and hashes,
+          published sample files for formats, documented worked examples for
+          historical or scientific algorithms, conformance suites for anything
+          standardised.
+        </p>
+        <p>
+          If your problem has an established correct answer somewhere, finding it
+          is worth an hour. It converts "I think this is right" into "this matches
+          the reference", which is a different kind of confidence — and it is the
+          one thing this project could not do, because nobody publishes the
+          correct NAV for an index that did not exist until it was deployed.
+        </p>
+      </div>
 
       <h3>What transfers unchanged</h3>
       <p>None of the following cares what language you chose:</p>
@@ -3427,7 +3499,7 @@ void noLetterEverEncryptsToItself() {
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.5.0 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.5.1 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.
