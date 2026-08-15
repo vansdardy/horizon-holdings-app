@@ -4,6 +4,37 @@
 
 ---
 
+## 两种用法,先确认你是哪一种
+
+**只想用这个程序** —— 去 [Releases](https://github.com/vansdardy/horizon-holdings-app/releases)
+下载 `Horizon Holdings Setup x.y.z.exe`,双击安装。机器上**不需要**装 Python 或 Node。
+
+> ⚠ 安装包**没有做代码签名**:Windows 会弹 SmartScreen 警告,需要点「更多信息 → 仍要运行」;
+> 如果你的机器开启了 **Smart App Control(强制)**,会直接拒绝运行 —— 详见文末「桌面版」一节。
+
+**想读代码 / 自己改 / 自己构建** —— 往下看。需要 Python 3.10+、Node.js,以及大约二十分钟:
+
+```bash
+git clone https://github.com/vansdardy/horizon-holdings-app.git
+cd horizon-holdings-app
+python -m venv .venv && .venv/Scripts/activate      # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+python server.py                                     # 只跑后端 + 网页版
+```
+
+再往上做成桌面程序(需要 Node):
+
+```bash
+pip install pyinstaller
+python -m PyInstaller backend.spec --noconfirm --distpath build/backend --workpath build/pyinstaller
+cd desktop && npm install && npm start                # 开发模式运行
+npm run dist                                          # 生成安装包
+```
+
+构建过程、设计取舍、发布流程为什么是这样,写在 `docs/building-this-app.html`(应用内也能直接看)。
+
+---
+
 ## 本包包含的文件
 
 ```
@@ -454,7 +485,7 @@ Yahoo 的非官方接口偶尔改动或限流。若失败,`/api/status` 的 `las
 
 ---
 
-## 桌面版 v1.1.0
+## 桌面版 v1.2.0
 
 已打包成 Electron 桌面程序:后端用 PyInstaller 冻结成独立可执行文件(90MB,目标机器不需要装
 Python),Electron 负责挑一个空闲端口、启动后端、轮询等它就绪、再把窗口指过去。
@@ -472,6 +503,15 @@ Python),Electron 负责挑一个空闲端口、启动后端、轮询等它就绪
 两者都会在完成后弹通知告诉你结果(净值多少、更新了几支、失败几支),不再是点完没反应。
 托盘里还有「这个应用是怎么做出来的」,会在应用内打开构建文档 —— 该文档随程序一起分发,
 断网也能看,页面顶部也有同样的入口。
+
+### 导入已有数据库(v1.2.0 新增)
+
+托盘 →「导入数据库…」,**任何时候**都能用,不再只有首次启动那一次机会。
+之前选了「全新开始」、换了电脑、或者想从备份恢复,都走这里。
+
+流程是刻意保守的:先校验文件头确实是 SQLite(不是就直接拒绝,原数据不动)→
+把当前数据库备份成 `portfolio-replaced-<时间戳>.db` → 停掉后台服务并等它真正退出
+→ 替换 → 重启并刷新窗口。原来的 `-wal` 残留会被清掉,否则它会被套用到新库上导致损坏。
 
 ### ⚠ 本机当前无法运行打包后的程序
 
