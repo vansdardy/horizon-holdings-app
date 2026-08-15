@@ -395,14 +395,22 @@ test('every exchange has an English name, and it is not Chinese', () => {
     `exchange name_en still contains Chinese: ${stillChinese.join(', ')}`);
 });
 
-test('the exchange column and filter both go through the language helper', () => {
-  // Printing ex.name directly is how the English table ended up in Chinese.
-  const body = /tbody\.innerHTML = rows\.map\([\s\S]*?\n  \}\)/.exec(HTML);
-  assert.ok(body, 'the constituent table row renderer was not found');
-  assert.doesNotMatch(
-    body[0], /\$\{ex\.name\}/,
-    'the exchange column must use dispExch(), not ex.name — ex.name is always ' +
-    'Chinese, whatever language the page is in.');
+test('no table renders a raw exchange name in any language', () => {
+  // The first version of this test looked only at the constituents table, so
+  // when the identical bug was fixed there it kept passing while the positions
+  // table went on printing Chinese to English readers. Scanning the whole file
+  // for the mistake, rather than one known site of it, is the difference
+  // between a test for a bug and a test for a class of bug.
+  const code = stripNonCode(inlineScripts(HTML).join('\n'));
+  const offenders = [];
+  for (const m of code.matchAll(/\$\{\s*(ex|exchInfo\([^)]*\))\.(name|note)\s*\}/g)) {
+    offenders.push(m[0]);
+  }
+  assert.deepStrictEqual(
+    offenders, [],
+    `raw exchange name/note interpolated into markup: ${offenders.join(', ')}\n` +
+    '.name and .note are always Chinese. Use dispExch() / dispExchNote(), which ' +
+    'follow the language.');
 });
 
 // ---------------------------------------------------------------------------

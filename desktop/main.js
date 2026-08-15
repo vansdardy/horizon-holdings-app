@@ -427,6 +427,14 @@ const TRAY_STRINGS = {
     alreadyCurrent: 'Already current for {q}; nothing re-fetched.',
     fundResult: '{n} tickers updated, {f} failed.',
     importedTitle: 'Database imported', importedBody: 'Previous data saved as:\n{f}',
+    menuFile: 'File', menuView: 'View', menuHelp: 'Help',
+    menuHide: 'Close to tray', menuReload: 'Reload', menuZoomIn: 'Zoom in',
+    menuZoomOut: 'Zoom out', menuZoomReset: 'Actual size', menuFullScreen: 'Full screen',
+    menuDevTools: 'Developer tools',
+    menuAbout: 'About Horizon Holdings',
+    aboutTitle: 'Horizon Holdings',
+    aboutBody: 'Version {v}\n\nA local portfolio NAV service. Everything runs on this machine; there are no accounts and no cloud.\n\nElectron {e} · Chromium {c} · Node {n}\n\nYour data: {d}',
+    btnClose: 'Close', btnOpenData: 'Open data folder',
     checkUpdates: 'Check for updates…',
     checking: 'Checking for updates…',
     downloading: 'Downloading update… {p}%',
@@ -465,6 +473,14 @@ const TRAY_STRINGS = {
     alreadyCurrent: '{q} 本季度已是最新,未重复请求。',
     fundResult: '{n} 支已更新,{f} 支失败。',
     importedTitle: '数据库已导入', importedBody: '原数据已备份为:\n{f}',
+    menuFile: '文件', menuView: '视图', menuHelp: '帮助',
+    menuHide: '收进托盘', menuReload: '重新载入', menuZoomIn: '放大',
+    menuZoomOut: '缩小', menuZoomReset: '实际大小', menuFullScreen: '全屏',
+    menuDevTools: '开发者工具',
+    menuAbout: '关于 Horizon Holdings',
+    aboutTitle: 'Horizon Holdings',
+    aboutBody: '版本 {v}\n\n本地组合净值服务。全部在本机运行,没有账号,也不上传云端。\n\nElectron {e} · Chromium {c} · Node {n}\n\n你的数据:{d}',
+    btnClose: '关闭', btnOpenData: '打开数据文件夹',
     checkUpdates: '检查更新…',
     checking: '正在检查更新…',
     downloading: '正在下载更新… {p}%',
@@ -575,7 +591,7 @@ function initUpdater() {
     log(`update available: ${info.version} (running ${app.getVersion()})`);
     updateChecking = false;
     updateState = 'idle';
-    if (refreshTray) refreshTray();
+    refreshUi();
 
     const size = humanSize((info.files && info.files[0] && info.files[0].size) || 0);
     const { response } = await dialog.showMessageBox({
@@ -590,10 +606,10 @@ function initUpdater() {
     if (response !== 0) { log('user declined the update'); return; }
 
     updateState = 'downloading';
-    if (refreshTray) refreshTray();
+    refreshUi();
     autoUpdater.downloadUpdate().catch(err => {
       updateState = 'idle';
-      if (refreshTray) refreshTray();
+      refreshUi();
       log(`update download failed: ${err.message}`);
     });
   });
@@ -602,7 +618,7 @@ function initUpdater() {
     log(`no update available (running ${app.getVersion()}, latest ${info.version})`);
     updateChecking = false;
     updateState = 'idle';
-    if (refreshTray) refreshTray();
+    refreshUi();
     // Only say so if a human asked. An automatic check that finds nothing
     // should be completely silent.
     if (updateManual) {
@@ -619,14 +635,14 @@ function initUpdater() {
   autoUpdater.on('download-progress', p => {
     updateState = 'downloading';
     updateProgress = Math.round(p.percent || 0);
-    if (refreshTray) refreshTray();
+    refreshUi();
   });
 
   autoUpdater.on('update-downloaded', async info => {
     log(`update downloaded: ${info.version}`);
     updateState = 'ready';
     updateVersion = info.version;
-    if (refreshTray) refreshTray();
+    refreshUi();
 
     const { response } = await dialog.showMessageBox({
       type: 'info',
@@ -647,7 +663,7 @@ function initUpdater() {
   autoUpdater.on('error', err => {
     updateChecking = false;
     updateState = 'idle';
-    if (refreshTray) refreshTray();
+    refreshUi();
     log(`updater error: ${err && err.message}`);
     if (updateManual) {
       dialog.showMessageBox({
@@ -697,7 +713,7 @@ async function checkForUpdates(manual) {
   updateManual = manual;
   updateChecking = true;
   updateState = 'checking';
-  if (refreshTray) refreshTray();
+  refreshUi();
   log(`checking for updates (manual=${manual})`);
   try {
     await autoUpdater.checkForUpdates();
@@ -844,7 +860,10 @@ function createWindow(show) {
 
   mainWindow.loadURL(`http://127.0.0.1:${backendPort}/`);
   mainWindow.once('ready-to-show', () => { if (show) mainWindow.show(); });
-  mainWindow.setMenuBarVisibility(false);
+  // The menu bar was hidden when there was no menu worth showing. There is now:
+  // File, View and Help, carrying the same commands as the tray plus the About
+  // box that answers "what version is this?".
+  mainWindow.setMenuBarVisibility(true);
 
   // Anything that isn't the local backend opens in the real browser instead of
   // navigating this window away from the app.
@@ -880,11 +899,132 @@ function showWindow() {
   mainWindow.focus();
 }
 
+// ------------------------------------------------------------ application menu
+/**
+ * The menu bar across the top of the window.
+ *
+ * This app had none, and everything it could do lived in the tray icon — which
+ * turned out to be the same mistake as putting "Import database" only in the
+ * tray: the first person to look for the version number reported that the app
+ * does not display one anywhere, because nobody thinks to right-click a tray
+ * icon to answer "what version is this?".
+ *
+ * A menu bar is where desktop users have looked for File and Help since 1984.
+ * Putting the same commands in both places is not duplication, it is meeting
+ * people where they look. The tray still works exactly as before, and matters
+ * more than the menu when the window is closed — which is most of the time.
+ *
+ * Menus in Electron are application-global, so this is rebuilt rather than
+ * duplicated when the language changes, for the same reason as the tray.
+ */
+function buildAppMenu(userData) {
+  const isMac = process.platform === 'darwin';
+
+  const template = [
+    // macOS puts the application menu first and expects the app's own name on
+    // it; on Windows and Linux there is no such menu and File comes first.
+    ...(isMac ? [{
+      label: app.getName(),
+      submenu: [
+        { label: tr('menuAbout'), click: () => showAbout(userData) },
+        { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' },
+        { label: tr('quit'), click: () => { isQuitting = true; app.quit(); } },
+      ],
+    }] : []),
+    {
+      label: tr('menuFile'),
+      submenu: [
+        { label: tr('importDb'), click: () => importDatabaseNow(userData) },
+        { label: tr('openData'), click: () => shell.openPath(userData) },
+        { type: 'separator' },
+        { label: tr('updatePrices'), toolTip: tr('updatePricesTip'),
+          click: () => runAction('/api/refresh', tr('labelPrices')) },
+        { label: tr('updateFundamentals'), toolTip: tr('updateFundamentalsTip'),
+          click: () => runAction('/api/refresh_fundamentals', tr('labelFundamentals')) },
+        { type: 'separator' },
+        // Named for what it does. "Close" would be a lie: the process stays up
+        // so the daily fetch keeps running, which is the whole point of the tray.
+        { label: tr('menuHide'), accelerator: 'CmdOrCtrl+W',
+          click: () => { if (mainWindow) mainWindow.hide(); } },
+        { label: tr('quit'), accelerator: 'CmdOrCtrl+Q',
+          click: () => { isQuitting = true; app.quit(); } },
+      ],
+    },
+    {
+      label: tr('menuView'),
+      submenu: [
+        { label: tr('menuReload'), role: 'reload' },
+        { type: 'separator' },
+        { label: tr('menuZoomIn'), role: 'zoomIn' },
+        { label: tr('menuZoomOut'), role: 'zoomOut' },
+        { label: tr('menuZoomReset'), role: 'resetZoom' },
+        { type: 'separator' },
+        { label: tr('menuFullScreen'), role: 'togglefullscreen' },
+        { label: tr('menuDevTools'), role: 'toggleDevTools' },
+      ],
+    },
+    {
+      label: tr('menuHelp'),
+      submenu: [
+        { label: tr('howBuilt'), click: openGuide },
+        { type: 'separator' },
+        // The same state-reporting entry as the tray, so a check started from
+        // either place is visible in both.
+        updateState === 'ready'
+          ? { label: tr('restartToUpdate', { v: updateVersion }), click: installUpdateNow }
+          : updateState === 'downloading'
+            ? { label: tr('downloading', { p: updateProgress }), enabled: false }
+            : updateState === 'checking'
+              ? { label: tr('checking'), enabled: false }
+              : { label: tr('checkUpdates'), click: () => checkForUpdates(true) },
+        ...(isMac ? [] : [{ type: 'separator' },
+                          { label: tr('menuAbout'), click: () => showAbout(userData) }]),
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/** Where "what version am I running?" is answered, by convention. */
+function showAbout(userData) {
+  dialog.showMessageBox(mainWindow || undefined, {
+    type: 'info',
+    title: tr('aboutTitle'),
+    message: `${tr('aboutTitle')} ${app.getVersion()}`,
+    detail: tr('aboutBody', {
+      v: app.getVersion(),
+      e: process.versions.electron,
+      c: process.versions.chrome,
+      n: process.versions.node,
+      d: userData,
+    }),
+    buttons: [tr('btnClose'), tr('btnOpenData')],
+    defaultId: 0,
+    cancelId: 0,
+  }).then(({ response }) => {
+    if (response === 1) shell.openPath(userData);
+  });
+}
+
 /**
  * Re-label the existing tray icon in the current language. Set by buildTray;
  * null until the tray exists.
  */
 let refreshTray = null;
+
+/**
+ * Redraw both places that show application state — the tray menu and the menu
+ * bar — so a language change or an update-progress tick can never leave the two
+ * disagreeing. One call site for both is the point: the tray and the menu bar
+ * carry the same commands, and keeping them in step by remembering to update
+ * each one is exactly how they drift apart.
+ */
+function refreshUi() {
+  if (refreshTray) refreshTray();
+  if (userDataDir) buildAppMenu(userDataDir);
+}
 
 function buildTray(userData) {
   // A Tray is a live shell icon, not a value. Constructing a second one adds a
@@ -1028,7 +1168,7 @@ if (!app.requestSingleInstanceLock()) {
       writeSettings(userData, { language: uiLang });
       // Re-label the existing icon. Emphatically NOT buildTray() — that makes a
       // second tray icon and leaves this one behind.
-      if (refreshTray) refreshTray();
+      refreshUi();
       log(`language switched to ${uiLang}`);
       return uiLang;
     });
@@ -1043,6 +1183,7 @@ if (!app.requestSingleInstanceLock()) {
 
     const startHidden = process.argv.includes('--hidden');
     buildTray(userData);
+    buildAppMenu(userData);
     createWindow(!startHidden);
 
     // The first seconds belong to starting the backend and drawing the window;

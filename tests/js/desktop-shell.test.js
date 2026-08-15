@@ -75,11 +75,38 @@ test('the language handler re-labels the tray instead of rebuilding it', () => {
   assert.doesNotMatch(
     handler[0], /buildTray\s*\(/,
     'the language handler must not call buildTray() — that is what put three ' +
-    'icons in the tray. Call refreshTray() to re-label the existing one.');
+    'icons in the tray. Call refreshUi() to re-label the existing one.');
   assert.match(
-    handler[0], /refreshTray\s*\(\s*\)/,
-    'the language handler must re-label the tray, or the menu keeps the old ' +
-    'language while the window shows the new one.');
+    handler[0], /refreshUi\s*\(\s*\)/,
+    'the language handler must refresh the chrome, or the tray and menu bar ' +
+    'keep the old language while the window shows the new one.');
+
+  // refreshUi is the indirection that keeps the tray and the menu bar in step;
+  // it must actually re-label the tray rather than only rebuilding the menu.
+  const refresh = /function refreshUi\(\)[\s\S]*?\n}/.exec(CODE);
+  assert.ok(refresh, 'refreshUi() not found');
+  assert.match(refresh[0], /refreshTray\s*\(\s*\)/, 'refreshUi must re-label the tray');
+  assert.match(refresh[0], /buildAppMenu\s*\(/, 'refreshUi must rebuild the menu bar');
+});
+
+test('the menu bar carries the commands people look for there', () => {
+  const fn = /function buildAppMenu\(userData\)[\s\S]*?\n}/.exec(CODE);
+  assert.ok(fn, 'buildAppMenu() not found');
+
+  // About answers "what version is this?", which is the question that exposed
+  // the tray-only design in the first place.
+  for (const [what, re] of [
+    ['an About entry', /showAbout\(/],
+    ['a check-for-updates entry', /checkForUpdates\(true\)/],
+    ['the guide', /openGuide/],
+    ['database import', /importDatabaseNow\(/],
+  ]) {
+    assert.match(fn[0], re, `the menu bar is missing ${what}`);
+  }
+
+  assert.match(
+    CODE, /mainWindow\.setMenuBarVisibility\(true\)/,
+    'the menu bar must be visible, or building it changes nothing on screen.');
 });
 
 // ---------------------------------------------------------------------------

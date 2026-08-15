@@ -9,6 +9,51 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.8.0
+
+The first release that existing installs can take automatically — v1.7.0 added
+the updater, and this is the version it will offer.
+
+**Added**
+
+- **A menu bar: File, View and Help.** Everything the app could do lived in the
+  tray icon, which is the same mistake as putting "Import database" only there:
+  nobody right-clicks a tray icon to answer "what version is this?". The menu
+  carries the same commands, plus **Help → About**, which is where that question
+  has been answered by convention for forty years. Check for updates is in Help,
+  and reports its own progress in both places at once.
+- **The version is in the window**, in the masthead beside the guide link. It
+  was technically there before — 10.5px, grey, in a row of controls far down the
+  page — which the person looking for it correctly reported as not being there.
+
+**Changed**
+
+- **The page uses the window.** The content was capped at 1240px, chosen when
+  this was a web page, where a narrow measure is a virtue. In a 1500px
+  application window it left 130px of empty background down each side while the
+  positions table crushed thirteen columns into what was left.
+- **The positions table gives its space to the things that need it.** Table
+  headings are nowrap throughout the page, which is right for short ones but
+  meant "Shares to target" and "Actual weight" each reserved a full line of
+  width — 133px and 113px — for columns showing six characters. That width came
+  out of Company (101px) and Region (96px), which wrapped to several lines and
+  pushed every row to 114px tall. Numeric headings now wrap onto two lines, the
+  numeric columns are held to a fixed width, and Region no longer breaks across
+  lines. Company went from 101px to 344px and rows from 114px to 58px.
+
+**Fixed**
+
+- **The positions table still showed Chinese exchange names in English.** The
+  same bug fixed in v1.7.0 for the constituents table, in a second place that
+  was missed — and the test written for it only checked the first table, so it
+  passed. Both tables now go through the language helper, and the test checks
+  both.
+- The guide shipped inside v1.7.0 still announced "v1.6.0" in its masthead and
+  colophon. Now checked by a test against `desktop/package.json`, along with the
+  changelog having an entry for the version being released.
+
+---
+
 ## v1.7.0
 
 **Added**
