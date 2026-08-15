@@ -9,6 +9,68 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.7.0
+
+**Added**
+
+- **The app updates itself.** It checks for a new version fifteen seconds after
+  launch and every six hours after that, and offers the update rather than
+  taking it: nothing is downloaded until you say yes, and nothing is installed
+  until you say yes again. A check that finds nothing is silent unless you
+  asked for it from the tray. Until now the only way to get a fix was to
+  uninstall, find the Releases page, and download 116 MB by hand — four steps
+  and a decision, for a fix you had not heard about.
+
+  The backend is stopped and *waited for* before the installer runs. It lives
+  inside the directory the installer replaces, and on Windows a running process
+  holds its own executable open, so "asked it to stop" is not "it has stopped".
+
+  Your database, settings and NAV history are untouched by an update — they
+  live in the per-user data directory, never in the install directory. That
+  separation is why replacing the install directory wholesale is safe.
+
+- The tray's update entry reports its own state — checking, downloading with a
+  percentage, or ready to install — instead of being a menu item that gives no
+  sign anything happened.
+
+**Fixed**
+
+- **Sector and country names stayed in English after switching to Chinese.**
+  Both charts were built once, at the top level of the script, so there was no
+  function to call to relabel them. They are now built inside functions the
+  language switch calls, like every other render on the page. The sector drift
+  chart at the bottom had the same symptom for a different reason — it lived in
+  a function, but the switch never called it.
+- **Exchange names ignored the language entirely.** The table printed the
+  Chinese name whatever the language, and the filter dropdown fell back to the
+  raw key — which is a code like `SIX`, not a name. Every exchange now has a
+  real name in both languages, and the notes beside them too.
+- **The same names rendered in two different fonts.** The sector chart asked for
+  Inter at 11px, the country chart for Inter at 12px, and the drift chart asked
+  for nothing at all, so it inherited the monospace default — the same eleven
+  sector names in two typefaces on one page, in English as much as in Chinese.
+  There is now one font for every category name in a chart, with Chinese
+  fallbacks named explicitly rather than left to the browser.
+
+**Documentation**
+
+- Part 13, updating what you shipped: why almost every small project stops at
+  the first release, the five steps every self-updater performs in every
+  language, the metadata file people forget to upload and the silent "you are
+  up to date" that follows, the defaults worth refusing, the fact that the first
+  version with an updater cannot deliver itself, an honest section on updaters
+  as a remote code execution channel and what going unsigned costs, how to test
+  a feature that needs two versions and a network, and where to start in Java,
+  .NET, Go, macOS and Linux. Parts 13–17 renumbered to 14–18.
+
+**Note for existing users**
+
+Copies at v1.6.1 and earlier were built before the updater existed and cannot
+update themselves. Install this version by hand once; from then on it will
+offer updates on its own.
+
+---
+
 ## v1.6.1
 
 Three bugs found by running the installed app, none of which the test suite

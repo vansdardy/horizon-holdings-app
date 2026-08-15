@@ -1,7 +1,7 @@
 {
   "name": "horizon-holdings-desktop",
   "productName": "Horizon Holdings",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "Desktop shell for the Horizon Holdings portfolio NAV service",
   "author": "Horizon Holdings",
   "main": "main.js",
@@ -25,7 +25,15 @@
       "main.js",
       "preload.js",
       "package.json",
-      "build/icon.png"
+      "build/icon.png",
+      "node_modules/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "vansdardy",
+        "repo": "horizon-holdings-app"
+      }
     ],
     "extraResources": [
       {
@@ -40,11 +48,15 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "artifactName": "Horizon-Holdings-Setup-${version}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "Horizon Holdings"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

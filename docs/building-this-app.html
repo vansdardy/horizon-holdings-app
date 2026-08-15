@@ -316,11 +316,12 @@
       <li><a href="#p10"><span class="n">10</span><span>Keeping it changeable</span></a></li>
       <li><a href="#p11"><span class="n">11</span><span>Keeping track of changes</span></a></li>
       <li><a href="#p12"><span class="n">12</span><span>Getting it to other people</span></a></li>
-      <li><a href="#p13"><span class="n">13</span><span>Building with an AI assistant</span></a></li>
-      <li><a href="#p14"><span class="n">14</span><span>Building something else</span></a></li>
-      <li><a href="#p15"><span class="n">15</span><span>Reading the source</span></a></li>
-      <li><a href="#p16"><span class="n">16</span><span>When you get stuck</span></a></li>
-      <li><a href="#p17"><span class="n">17</span><span>What transfers</span></a></li>
+      <li><a href="#p13"><span class="n">13</span><span>Updating what you shipped</span></a></li>
+      <li><a href="#p14"><span class="n">14</span><span>Building with an AI assistant</span></a></li>
+      <li><a href="#p15"><span class="n">15</span><span>Building something else</span></a></li>
+      <li><a href="#p16"><span class="n">16</span><span>Reading the source</span></a></li>
+      <li><a href="#p17"><span class="n">17</span><span>When you get stuck</span></a></li>
+      <li><a href="#p18"><span class="n">18</span><span>What transfers</span></a></li>
     </ol>
   </nav>
 
@@ -2839,9 +2840,312 @@ git push origin v1.4.0</code></pre>
       </p>
     </section>
 
-    <!-- ============================================ PART 11 -->
+    <!-- ============================================ PART 13 -->
     <section class="part" id="p13">
       <p class="part-num">Part 13</p>
+      <h2>Updating what you shipped</h2>
+      <p class="part-intro">
+        Publishing a release gets a program to people once. Almost every project
+        stops there, and the result is not that users get old software — it is
+        that they never find out you fixed anything.
+      </p>
+
+      <p>
+        Here is the shape of the problem, and it is worth feeling it before
+        reading the solution. You ship version 1.0. Someone installs it. You find
+        a bug, fix it, and publish 1.1 with a careful set of release notes. Your
+        user is still on 1.0. They will be on 1.0 in a year. Not because they
+        refused the update — because nothing ever told them one existed, and
+        checking a stranger's Releases page is not a thing people do.
+      </p>
+      <p>
+        The manual alternative is worse than it sounds. To test the fix, the
+        person has to notice the new version, uninstall the old one, download an
+        installer of a hundred megabytes, and run it. That is four steps and a
+        decision, for a fix they did not ask for and cannot evaluate. Most people
+        do it once, out of goodwill, and never again.
+      </p>
+
+      <h3>What an update actually is</h3>
+      <p>
+        Strip away the machinery and updating is one sentence:
+        <strong>replace the program, keep the data.</strong> Everything difficult
+        about updates comes from that line being in the wrong place.
+      </p>
+      <p>
+        This is why the packaging rule from
+        <a href="#p5">Part 5</a> matters more than it seemed at the time. The
+        installation directory is disposable: an update deletes it and writes a
+        new one. Anything the user owns — the database, their settings, their
+        history — has to live somewhere else, in a per-user data directory the
+        installer never touches. If you put the database next to the executable
+        because it was convenient during development, the first update you ever
+        ship deletes your users' data, and you will find out from them.
+      </p>
+
+      <div class="aside note-good">
+        <span class="tag">A useful test before you build any of this</span>
+        <p>
+          Install your app. Use it enough to create real data. Now delete the
+          entire installation directory by hand and reinstall. If your data
+          survived, updates are safe. If it did not, fix that first — an
+          auto-updater built on top of this mistake is a machine for destroying
+          your users' work, on a schedule.
+        </p>
+      </div>
+
+      <h3>Three ways software updates itself</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th></th><th>Manual</th><th>Self-updating</th><th>Managed</th></tr></thead>
+          <tbody>
+            <tr><td><strong>How</strong></td><td>User re-downloads the installer</td><td>App checks a URL, downloads, installs</td><td>App store or package manager does it</td></tr>
+            <tr><td><strong>You build</strong></td><td>Nothing</td><td>An updater and a metadata file</td><td>A store submission</td></tr>
+            <tr><td><strong>Users get updates</strong></td><td>Almost never</td><td>Within a day or two</td><td>Automatically</td></tr>
+            <tr><td><strong>Costs</strong></td><td>Your users' attention</td><td>Hosting, and being trusted</td><td>Review time, fees, rules</td></tr>
+            <tr><td><strong>Good when</strong></td><td>Two users, both of them you</td><td>You distribute the binary yourself</td><td>You want reach and accept the rules</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The middle column is where most independently-distributed desktop
+        software lives, and it is what the rest of this part describes. Note what
+        you are taking on by choosing it: you are asking people to let a program
+        on their machine download code from the internet and run it. That is not
+        a small thing to be trusted with, and it is why the security section
+        below is not optional reading.
+      </p>
+
+      <h3>The mechanism, in five steps</h3>
+      <p>
+        Every self-updater in every language does the same five things. The
+        libraries differ; the sequence does not.
+      </p>
+      <ol>
+        <li><strong>Publish a metadata file next to the installer.</strong> A
+          small text file saying what the newest version is, what its file is
+          called, how big it is, and a checksum of its contents.</li>
+        <li><strong>The app fetches that file and compares versions.</strong>
+          This is the only reason <a href="#p11">semantic versioning</a> has to
+          be a real ordering and not a mood: a machine compares these numbers.</li>
+        <li><strong>If newer, download the installer.</strong> In the background,
+          to a cache directory.</li>
+        <li><strong>Verify it.</strong> Compare the downloaded file's checksum
+          against the one in the metadata. A truncated download and a tampered
+          one look identical to code that skips this.</li>
+        <li><strong>Run the installer, then restart.</strong> Which requires the
+          running program to get out of its own way.</li>
+      </ol>
+
+      <div class="aside note-bad">
+        <span class="tag">The mistake nearly everyone makes once</span>
+        <p>
+          Step 1 is a <em>separate file</em> from the installer, and it is easy to
+          forget to upload it. If your release page has
+          <code>Setup&nbsp;1.7.0.exe</code> but no metadata file, every installed
+          copy will check, find nothing it understands, and report "you are up to
+          date" — forever, in complete silence. Nothing errors. The update
+          machinery is working perfectly; it simply has nothing to read. Whatever
+          tool you use, make uploading its metadata part of the release recipe,
+          not something you remember.
+        </p>
+      </div>
+
+      <h3>What this project uses</h3>
+      <p>
+        For an Electron app the library is <code>electron-updater</code>, and the
+        metadata file is a <code>latest.yml</code> that the packaging tool
+        generates for you. You tell the builder where releases live:
+      </p>
+      <pre><code>"publish": [
+  { "provider": "github", "owner": "your-name", "repo": "your-repo" }
+]</code></pre>
+      <p>
+        and the built release then contains three files rather than one: the
+        installer, its <code>.blockmap</code>, and <code>latest.yml</code>. All
+        three get attached to the release. The updater reads the last one.
+      </p>
+      <pre><code>const { autoUpdater } = require('electron-updater');
+
+autoUpdater.autoDownload = false;        // ask before spending their bandwidth
+autoUpdater.checkForUpdates();           // fires events, does not block</code></pre>
+
+      <h3>The decisions that are yours, not the library's</h3>
+      <p>
+        An updater is mostly a set of defaults you should not accept. Each of
+        these is a choice this project made deliberately, and each is a choice
+        you will face in any language.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Question</th><th>Default</th><th>What this app does, and why</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Download without asking?</td>
+              <td>Yes</td>
+              <td>No. The installer is over 100 MB. The default spends a stranger's bandwidth, possibly on a phone tether, to solve a problem they have not been told about.</td>
+            </tr>
+            <tr>
+              <td>Install without asking?</td>
+              <td>On next quit</td>
+              <td>Only after they choose "install later". Applying an update someone never agreed to download is worse than not updating.</td>
+            </tr>
+            <tr>
+              <td>Say "no updates found"?</td>
+              <td>—</td>
+              <td>Only when a human clicked "check". An automatic check that finds nothing must be completely silent, or it becomes noise people learn to dismiss.</td>
+            </tr>
+            <tr>
+              <td>When to check?</td>
+              <td>At launch</td>
+              <td>Fifteen seconds after launch, then every six hours. The first seconds belong to starting up; and an app that lives in the tray for weeks would otherwise check twice a month.</td>
+            </tr>
+            <tr>
+              <td>What does Escape mean?</td>
+              <td>Button&nbsp;0</td>
+              <td>"Not now". Dismissing a dialog must never be the action-taking answer — the same trap as the first-run dialog in <a href="#p8">Part 8</a>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="aside note-bad">
+        <span class="tag">A platform trap worth knowing before it bites</span>
+        <p>
+          On Windows, a running program holds its own executable file open, and
+          so does every process it started. This app runs a separate backend
+          process out of the installation directory — the exact directory the
+          installer is about to overwrite. Asking that process to die and
+          immediately handing over to the installer produces a half-updated
+          directory, because "asked it to stop" and "it has stopped" are
+          different moments. The fix is to stop it and <em>wait for it to
+          actually exit</em> before starting the installer. Any app with a helper
+          process, a database engine, or a background worker has this problem.
+        </p>
+      </div>
+
+      <h3>The problem you cannot fix from inside</h3>
+      <p>
+        There is one limitation worth understanding clearly, because it looks
+        like a bug the first time you meet it and it is not.
+      </p>
+      <p>
+        <strong>The first version that can update itself cannot deliver itself.</strong>
+        Users on older builds are running code written before the updater
+        existed. They have no mechanism to learn about anything. Every one of
+        them has to install the new version by hand, exactly once, and from then
+        on they are on the automatic path.
+      </p>
+      <p>
+        So plan for it rather than being surprised by it: say so plainly in the
+        release notes of the version that introduces updating, and expect that
+        some users will simply never make that jump. This is also an argument for
+        adding an updater <em>early</em> — the longer you wait, the more people
+        are stranded on the far side of it.
+      </p>
+
+      <h3>Security: you are building a remote code execution channel</h3>
+      <p>
+        That sentence is not alarmism; it is a plain description. You are writing
+        code that downloads a program from the internet and runs it with the
+        user's privileges. Handled carelessly, an updater is the most dangerous
+        thing in your application.
+      </p>
+      <ul>
+        <li><strong>HTTPS only.</strong> Over plain HTTP, anyone between your user
+          and the server can substitute their own installer.</li>
+        <li><strong>Verify the checksum.</strong> Reputable libraries do this for
+          you from the metadata file. Know that yours does.</li>
+        <li><strong>Code signing</strong> is the real answer, and it costs money —
+          a certificate is a yearly fee. A signed app proves the update came from
+          the same publisher as the original.</li>
+      </ul>
+      <p>
+        This project is <strong>not</strong> signed, and it is worth being honest
+        about what that costs rather than quietly omitting it. Users see a
+        SmartScreen warning on install; the update is verified by checksum
+        against a file served over HTTPS from GitHub, which protects against
+        corruption and interception but not against someone who has taken over
+        the repository itself. For a personal project distributed to a handful of
+        people that is a reasonable place to land. For anything with real users,
+        buy the certificate.
+      </p>
+
+      <h3>Testing something that needs two versions</h3>
+      <p>
+        Here is a feature you genuinely cannot unit-test. An update requires an
+        installed old build, a published new one, and a network between them —
+        none of which exists inside a test runner. Do not let that turn into "I
+        will find out when a user does".
+      </p>
+      <ol>
+        <li>Build and <em>install</em> version N. Not run from source — installed,
+          the way a user has it.</li>
+        <li>Create some data in it, so you can prove the update preserves it.</li>
+        <li>Bump to N+1, build, and publish it with its metadata file.</li>
+        <li>Open the installed N. Wait for the check, take the update, let it
+          restart.</li>
+        <li>Confirm three things: it reports N+1, your data is still there, and
+          only one copy of any helper process is running.</li>
+      </ol>
+      <p>
+        What a test suite <em>can</em> pin are the decisions around it: that
+        automatic downloading stays off, that the helper process is stopped
+        before the installer runs, that the updater library is packaged as a
+        runtime dependency rather than a build-time one. These are one-line
+        assertions that read source rather than run it — weak evidence of
+        correctness, strong evidence of intent, and they fail loudly when someone
+        undoes the reasoning.
+      </p>
+
+      <h3>The same idea in other ecosystems</h3>
+      <p>
+        The vocabulary changes and the five steps do not. If you are building
+        something other than an Electron app, this is where to start looking.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>You are building</th><th>Look at</th><th>Plays the role of the metadata file</th></tr></thead>
+          <tbody>
+            <tr><td>Electron (any OS)</td><td><code>electron-updater</code></td><td><code>latest.yml</code></td></tr>
+            <tr><td>A macOS app</td><td>Sparkle</td><td>An <code>appcast.xml</code> feed</td></tr>
+            <tr><td>A Java desktop app</td><td><code>jpackage</code> plus your own check, or install4j</td><td>Whatever you define — usually a small JSON file you write and host</td></tr>
+            <tr><td>A .NET app</td><td>Squirrel, Velopack, or MSIX</td><td><code>RELEASES</code> / an app installer manifest</td></tr>
+            <tr><td>A Go binary</td><td><code>go-update</code> and similar</td><td>Commonly the GitHub Releases API itself</td></tr>
+            <tr><td>Linux, distributed properly</td><td>Flatpak, Snap, or a repository</td><td>The package index — the system updates you</td></tr>
+            <tr><td>A mobile app</td><td>The store</td><td>The store. You do not build this at all.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        If your framework has no updater at all — which is the normal situation
+        for a Java or Go project — you are not stuck. The five steps are
+        implementable by hand in an afternoon: host a JSON file with a version
+        number and a download URL, compare it with your own version at startup,
+        download to a temporary directory, check a SHA-256 you also published,
+        and hand the file to the platform's installer. Doing it by hand once is
+        the best way to understand what the libraries are doing for you.
+      </p>
+
+      <div class="aside">
+        <span class="tag">What you do not need yet</span>
+        <p>
+          Staged rollouts, beta channels, delta updates that download only what
+          changed, forced updates that refuse to run the old version. All of
+          these are real and all of them are solutions to problems you get from
+          having many thousands of users. Build the simple version first. The one
+          thing worth doing early is keeping your old releases published rather
+          than deleting them — if an update turns out to be broken, "install the
+          previous version" is your entire rollback plan, and it only works if
+          the previous version is still there.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================ PART 11 -->
+    <section class="part" id="p14">
+      <p class="part-num">Part 14</p>
       <h2>Building with an AI assistant</h2>
       <p class="part-intro">
         This application was built with one. That is worth being specific about,
@@ -2965,8 +3269,8 @@ git push origin v1.4.0</code></pre>
     </section>
 
     <!-- ============================================ PART 14 -->
-    <section class="part" id="p14">
-      <p class="part-num">Part 14</p>
+    <section class="part" id="p15">
+      <p class="part-num">Part 15</p>
       <h2>Building something else</h2>
       <p class="part-intro">
         The most useful thing this document can tell you about your next
@@ -3291,8 +3595,8 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
     </section>
 
     <!-- ============================================ PART 15 -->
-    <section class="part" id="p15">
-      <p class="part-num">Part 15</p>
+    <section class="part" id="p16">
+      <p class="part-num">Part 16</p>
       <h2>Reading the source</h2>
       <p class="part-intro">
         Reading code is a separate skill from writing it, it is the one you will
@@ -3466,8 +3770,8 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
     </section>
 
     <!-- ============================================ PART 16 -->
-    <section class="part" id="p16">
-      <p class="part-num">Part 16</p>
+    <section class="part" id="p17">
+      <p class="part-num">Part 17</p>
       <h2>When you get stuck</h2>
       <p class="part-intro">
         You will be stuck for hours at a time. That is not a sign you chose the
@@ -3591,7 +3895,7 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
       <ul>
         <li><strong>Give it the error text and the code and what you expected.</strong> "It doesn't work" gets you a guess, and a confident one.</li>
         <li><strong>Ask it to explain, not only to fix.</strong> A patch you do not understand becomes tomorrow's bug, and you will not recognise it.</li>
-        <li><strong>Run what it gives you.</strong> Part 13 is an honest account of an assistant's output looking correct and being wrong. Plausible is not verified — for its code exactly as much as for yours.</li>
+        <li><strong>Run what it gives you.</strong> Part 14 is an honest account of an assistant's output looking correct and being wrong. Plausible is not verified — for its code exactly as much as for yours.</li>
       </ul>
 
       <div class="aside note-bad">
@@ -3610,8 +3914,8 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
     </section>
 
     <!-- ============================================ PART 16 -->
-    <section class="part" id="p17">
-      <p class="part-num">Part 17</p>
+    <section class="part" id="p18">
+      <p class="part-num">Part 18</p>
       <h2>What transfers</h2>
       <p class="part-intro">
         The parts of this that are not about portfolios, Python, or Electron.

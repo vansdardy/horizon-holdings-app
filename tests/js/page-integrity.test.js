@@ -303,7 +303,110 @@ test('setStatusLine drops the data-i18n attribute before writing', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. The NAV panel reads the index currency from the stats it was given.
+// 4. Every chart lives in a function that the language switch calls.
+//
+// The bug: the sector and country charts were constructed at the top level of
+// the script, once, at load. Their axis labels are translated — but there was
+// no function to call to redraw them, so switching to Chinese left the sector
+// and country names in English. The drift chart at the bottom did live in a
+// function, and was simply missing from setLang()'s list, with the same result.
+//
+// The rule: a chart holding translated text must be rebuildable, and setLang()
+// must actually rebuild it. Both halves are checked, because either one alone
+// leaves the labels stuck.
+// ---------------------------------------------------------------------------
+
+/** Names of functions containing a `new Chart(` call, by brace matching. */
+function chartRenderers(code) {
+  const found = new Map();
+  const fnRe = /function\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g;
+  let m;
+  while ((m = fnRe.exec(code)) !== null) {
+    let i = m.index + m[0].length, depth = 1;
+    while (i < code.length && depth > 0) {
+      if (code[i] === '{') depth++;
+      else if (code[i] === '}') depth--;
+      i++;
+    }
+    const body = code.slice(m.index, i);
+    if (/new Chart\s*\(/.test(body)) found.set(m[1], body);
+  }
+  return found;
+}
+
+test('every chart is built inside a function the language switch can call', () => {
+  const code = stripNonCode(inlineScripts(HTML).join('\n'));
+
+  const renderers = chartRenderers(code);
+  assert.ok(renderers.size >= 3, `expected several chart renderers, found ${renderers.size}`);
+
+  // No chart may be constructed outside a function: count all constructions and
+  // compare with those accounted for inside renderers.
+  const total = (code.match(/new Chart\s*\(/g) || []).length;
+  const inside = [...renderers.values()]
+    .reduce((n, body) => n + (body.match(/new Chart\s*\(/g) || []).length, 0);
+  assert.strictEqual(
+    total, inside,
+    `${total - inside} chart(s) are constructed at the top level of the script. ` +
+    'A chart built once at load can never be relabelled, so its translated ' +
+    'axis labels stay in whatever language the page started in.');
+
+  // And each renderer must be named in setLang()'s rebuild list.
+  const setLang = /function setLang\([\s\S]*?\n}/.exec(code);
+  assert.ok(setLang, 'setLang() not found');
+
+  const missing = [...renderers.keys()].filter(name =>
+    !new RegExp(`\\b${name}\\b`).test(setLang[0]));
+
+  assert.deepStrictEqual(
+    missing, [],
+    `chart renderer(s) missing from setLang(): ${missing.join(', ')}\n` +
+    'Their labels will keep the old language after a switch.');
+});
+
+// ---------------------------------------------------------------------------
+// 5. Exchanges have a name in both languages.
+//
+// The bug: EXCHANGE_INFO carried only Chinese names, so the table printed
+// Chinese exchange names to an English reader, and the filter dropdown fell
+// back to the raw key — which is a code like "SIX", not a name.
+// ---------------------------------------------------------------------------
+
+const CJK = /[㐀-鿿豈-﫿]/;
+
+test('every exchange has an English name, and it is not Chinese', () => {
+  const block = /const EXCHANGE_INFO = \{[\s\S]*?\n\};/.exec(HTML);
+  assert.ok(block, 'EXCHANGE_INFO not found');
+
+  const entries = [...block[0].matchAll(/^\s*'([^']+)':\s*\{([^}]*)\}/gm)];
+  assert.ok(entries.length >= 10, `expected the full exchange table, got ${entries.length}`);
+
+  const missing = [], stillChinese = [];
+  for (const [, key, body] of entries) {
+    const en = /name_en:\s*'([^']*)'/.exec(body);
+    if (!en) { missing.push(key); continue; }
+    if (CJK.test(en[1])) stillChinese.push(`${key} -> ${en[1]}`);
+    // A note in one language needs the other, or half the row switches.
+    if (/\bnote:/.test(body) && !/\bnote_en:/.test(body)) missing.push(`${key} (note_en)`);
+  }
+
+  assert.deepStrictEqual(missing, [], `exchange entries missing English: ${missing.join(', ')}`);
+  assert.deepStrictEqual(stillChinese, [],
+    `exchange name_en still contains Chinese: ${stillChinese.join(', ')}`);
+});
+
+test('the exchange column and filter both go through the language helper', () => {
+  // Printing ex.name directly is how the English table ended up in Chinese.
+  const body = /tbody\.innerHTML = rows\.map\([\s\S]*?\n  \}\)/.exec(HTML);
+  assert.ok(body, 'the constituent table row renderer was not found');
+  assert.doesNotMatch(
+    body[0], /\$\{ex\.name\}/,
+    'the exchange column must use dispExch(), not ex.name — ex.name is always ' +
+    'Chinese, whatever language the page is in.');
+});
+
+// ---------------------------------------------------------------------------
+// 6. The NAV panel reads the index currency from the stats it was given.
 //
 // Pins the exact line the typo lived on. `st` is the merged stats object;
 // anything else is the rename having gone wrong again.

@@ -83,6 +83,15 @@ The app lives in your system tray. Some things worth knowing on day one:
   *Import* and point it at your existing `portfolio.db`. Otherwise choose *Start fresh*.
 - **Prices update once a day at 18:00** local time, and only while the app is running. If
   your machine was asleep, the next fetch fills in the days it missed.
+- **The app updates itself.** It checks shortly after launch and every six hours, and asks
+  before downloading anything and again before installing. You can also check on demand:
+  right-click the tray icon → **Check for updates…**. Updating never touches your database,
+  your settings or your NAV history.
+
+  If you are on **v1.6.1 or earlier**, that version was built before updating existed and
+  cannot update itself — install once by hand from the
+  [Releases page](https://github.com/vansdardy/horizon-holdings-app/releases), and it will
+  keep itself current from then on.
 
 ---
 

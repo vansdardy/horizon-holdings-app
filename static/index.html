@@ -53,9 +53,14 @@ window.addEventListener('DOMContentLoaded', function(){
     --pos: #4FA89B;
     --neg: #B8674D;
     --radius: 3px;
-    --serif: 'Source Serif 4', Georgia, serif;
-    --sans: 'Inter', -apple-system, sans-serif;
-    --mono: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+    /* The CJK names are not decoration. None of the three vendored fonts has
+       Chinese glyphs, so every Chinese character on this page was resolved by
+       whatever the browser chose on its own — which differs between machines
+       and made the Chinese view look typeset by two hands. Naming the fallback
+       makes the choice ours. */
+    --serif: 'Source Serif 4', Georgia, 'Songti SC', 'SimSun', serif;
+    --sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', 'PingFang SC', 'Microsoft YaHei', monospace;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{
@@ -621,26 +626,34 @@ const DATA = [{"t": "BRK.B", "n": "伯克希尔哈撒韦", "n_en": "Berkshire Ha
 // ticker's actual trading currency, which tells you which leg is the real listing.
 // verified:false means I could not confirm a specific IBKR code — search by
 // ticker or ISIN in IBKR directly rather than trust a guess here.
+//
+// name/note are Chinese, name_en/note_en English. Both are required: the table
+// used to print `name` unconditionally, so an English reader got a Chinese
+// exchange column, and the filter fell back to the raw key — which is a code
+// like "SIX", not a name. An exchange has a real name in both languages and
+// should show it in both.
 const EXCHANGE_INFO = {
-  'NASDAQ':               { name: '纳斯达克',            ibkr: 'NASDAQ', verified: true },
-  'NYSE':                 { name: '纽约证券交易所',        ibkr: 'NYSE',    verified: true },
-  'NYSE(原都柏林)':         { name: '纽约证券交易所',        ibkr: 'NYSE',    verified: true, note: '2023年从都柏林迁至纽约主上市' },
-  'TSX':                  { name: '多伦多证券交易所',      ibkr: 'TSE',     verified: true },
-  'TSX/NYSE':             { name: '多伦多证券交易所',      ibkr: 'TSE',     verified: true, note: '亦有紐約ADR/双重上市,以下按主要交易货币判定' },
-  'LSE':                  { name: '伦敦证券交易所',        ibkr: 'LSE',     verified: true },
-  'Euronext Paris':       { name: '泛欧交易所 · 巴黎',     ibkr: 'SBF',     verified: true },
-  'Euronext Amsterdam':   { name: '泛欧交易所 · 阿姆斯特丹', ibkr: 'AEB',    verified: true },
-  'Euronext Brussels':    { name: '泛欧交易所 · 布鲁塞尔',  ibkr: null,      verified: false },
-  'Euronext Dublin':      { name: '泛欧交易所 · 都柏林',    ibkr: null,      verified: false },
-  'XETRA':                { name: '法兰克福 · Xetra',      ibkr: 'IBIS',    verified: true, note: 'IBKR代码与交易所惯用名不同' },
-  'SIX':                  { name: '瑞士证券交易所 SIX',    ibkr: 'EBS',     verified: true },
-  'TSE':                  { name: '东京证券交易所',        ibkr: 'TSEJ',    verified: true, note: '与加拿大TSX的IBKR代码"TSE"不同,东京用TSEJ' },
-  'Borsa Italiana':       { name: '意大利证券交易所 · 米兰', ibkr: 'BVME',   verified: true },
-  'Borsa Italiana/NYSE':  { name: '意大利证券交易所 · 米兰', ibkr: 'BVME',   verified: true, note: '亦在纽交所双重上市,以下按主要交易货币判定' },
-  'Nasdaq Copenhagen':    { name: '哥本哈根证券交易所',     ibkr: 'CPH',     verified: true },
+  'NASDAQ':               { name: '纳斯达克',            name_en: 'Nasdaq',                    ibkr: 'NASDAQ', verified: true },
+  'NYSE':                 { name: '纽约证券交易所',        name_en: 'New York Stock Exchange',   ibkr: 'NYSE',    verified: true },
+  'NYSE(原都柏林)':         { name: '纽约证券交易所',        name_en: 'New York Stock Exchange',   ibkr: 'NYSE',    verified: true, note: '2023年从都柏林迁至纽约主上市', note_en: 'Moved its primary listing from Dublin to New York in 2023' },
+  'TSX':                  { name: '多伦多证券交易所',      name_en: 'Toronto Stock Exchange',    ibkr: 'TSE',     verified: true },
+  'TSX/NYSE':             { name: '多伦多证券交易所',      name_en: 'Toronto Stock Exchange',    ibkr: 'TSE',     verified: true, note: '亦有紐約ADR/双重上市,以下按主要交易货币判定', note_en: 'Also has a New York ADR / dual listing; resolved here by the currency it mainly trades in' },
+  'LSE':                  { name: '伦敦证券交易所',        name_en: 'London Stock Exchange',     ibkr: 'LSE',     verified: true },
+  'Euronext Paris':       { name: '泛欧交易所 · 巴黎',     name_en: 'Euronext · Paris',          ibkr: 'SBF',     verified: true },
+  'Euronext Amsterdam':   { name: '泛欧交易所 · 阿姆斯特丹', name_en: 'Euronext · Amsterdam',     ibkr: 'AEB',    verified: true },
+  'Euronext Brussels':    { name: '泛欧交易所 · 布鲁塞尔',  name_en: 'Euronext · Brussels',       ibkr: null,      verified: false },
+  'Euronext Dublin':      { name: '泛欧交易所 · 都柏林',    name_en: 'Euronext · Dublin',         ibkr: null,      verified: false },
+  'XETRA':                { name: '法兰克福 · Xetra',      name_en: 'Frankfurt · Xetra',         ibkr: 'IBIS',    verified: true, note: 'IBKR代码与交易所惯用名不同', note_en: "IBKR's code differs from the exchange's usual name" },
+  'SIX':                  { name: '瑞士证券交易所 SIX',    name_en: 'SIX Swiss Exchange',        ibkr: 'EBS',     verified: true },
+  'TSE':                  { name: '东京证券交易所',        name_en: 'Tokyo Stock Exchange',      ibkr: 'TSEJ',    verified: true, note: '与加拿大TSX的IBKR代码"TSE"不同,东京用TSEJ', note_en: 'Not the same as Toronto\'s IBKR code "TSE" — Tokyo is TSEJ' },
+  'Borsa Italiana':       { name: '意大利证券交易所 · 米兰', name_en: 'Borsa Italiana · Milan',   ibkr: 'BVME',   verified: true },
+  'Borsa Italiana/NYSE':  { name: '意大利证券交易所 · 米兰', name_en: 'Borsa Italiana · Milan',   ibkr: 'BVME',   verified: true, note: '亦在纽交所双重上市,以下按主要交易货币判定', note_en: 'Also dual-listed on the NYSE; resolved here by the currency it mainly trades in' },
+  'Nasdaq Copenhagen':    { name: '哥本哈根证券交易所',     name_en: 'Nasdaq Copenhagen',         ibkr: 'CPH',     verified: true },
 };
 function exchInfo(raw){
-  return EXCHANGE_INFO[raw] || { name: raw, ibkr: null, verified: false };
+  // An unknown exchange falls back to its raw key in both languages — better a
+  // code than a blank cell, and it makes the gap visible.
+  return EXCHANGE_INFO[raw] || { name: raw, name_en: raw, ibkr: null, verified: false };
 }
 const DATA_BY_TICKER = Object.fromEntries(DATA.map(d => [d.t, d]));
 
@@ -707,7 +720,8 @@ const dispName    = d => LANG === 'zh' ? d.n   : (d.n_en   || d.n);
 const dispCountry = c => LANG === 'zh' ? c     : (COUNTRY_EN[c] || c);
 const dispInd     = d => LANG === 'zh' ? d.ind : (d.ind_en || d.ind);
 const dispMoat    = d => LANG === 'zh' ? d.m   : (d.m_en   || d.m);
-const dispExch    = x => LANG === 'zh' ? exchInfo(x).name : (EXCH_EN[x] || x);
+const dispExch    = x => { const e = exchInfo(x); return LANG === 'zh' ? e.name : (e.name_en || EXCH_EN[x] || x); };
+const dispExchNote = x => { const e = exchInfo(x); return LANG === 'zh' ? e.note : e.note_en; };
 const sectorLabel = s => LANG === 'zh' ? (SECTOR_ZH[s] || s) : s;
 const sectorShort = s => LANG === 'zh' ? (SECTOR_ZH[s] || s).split(' ')[0] : s;
 
@@ -717,6 +731,25 @@ const COUNTRY_COLOR = {"美国": "#C9A24B", "法国": "#4FA89B", "加拿大": "#
 
 const fmtPct = (v, d=2) => (v*100).toFixed(d) + '%';
 const fmtNum = (v, d=1) => v.toFixed(d);
+
+/**
+ * One font for every category NAME drawn inside a chart.
+ *
+ * Numbers stay on the mono default below, which is deliberate — digits line up
+ * in a monospace column. Names are the other case, and they used to be
+ * whatever each chart happened to say: the sector bars asked for Inter at 11px,
+ * the country bars for Inter at 12px, and the drift chart at the bottom asked
+ * for nothing at all, so it inherited the mono default. The result was the same
+ * eleven sector names rendered in two different typefaces in two charts on one
+ * page, in English as much as in Chinese.
+ *
+ * The CJK entries matter as much as Inter. Neither Inter nor IBM Plex Mono has
+ * Chinese glyphs, so Chinese labels were being resolved by whatever the browser
+ * picked on its own — which is why the Chinese view could show a third font
+ * again. Naming the fallbacks makes that choice ours instead of the browser's.
+ */
+const CHART_NAME_FONT =
+  "'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif";
 
 Chart.defaults.font.family = "'IBM Plex Mono', monospace";
 Chart.defaults.color = '#96A0AE';
@@ -807,51 +840,68 @@ function aggregate(key, order){
 const sectorAgg = aggregate('s', SECTOR_ORDER);
 const countryAgg = aggregate('c', COUNTRY_ORDER);
 
-new Chart(document.getElementById('sectorChart'), {
-  type: 'bar',
-  data: {
-    labels: sectorAgg.map(d => sectorLabel(d.label)),
-    datasets: [{
-      data: sectorAgg.map(d => +(d.value*100).toFixed(2)),
-      backgroundColor: sectorAgg.map(d => SECTOR_COLOR[d.label]),
-      borderRadius: 2,
-      barThickness: 14,
-    }]
-  },
-  options: {
-    indexAxis: 'y',
-    responsive: true,
-    plugins: { legend: { display: false },
-      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.parsed.x.toFixed(2) + '%' } } },
-    scales: {
-      x: { grid: { color: '#1B222C' }, ticks: { callback: v => v+'%' } },
-      y: { grid: { display: false }, ticks: { font: { size: 11, family: "'Inter'" } } }
-    }
-  }
-});
+// Both of these were built once at load, at the top level, with no way to
+// rebuild them. Their labels are translated — so switching to Chinese left the
+// sector and country names sitting in English, because the only code that could
+// have relabelled them ran before the switch existed and never ran again. A
+// chart holding translated text has to live in a function that setLang() can
+// call, exactly like every other render on this page.
+let sectorChart = null, countryChart = null;
 
-new Chart(document.getElementById('countryChart'), {
-  type: 'bar',
-  data: {
-    labels: countryAgg.map(d => dispCountry(d.label)),
-    datasets: [{
-      data: countryAgg.map(d => +(d.value*100).toFixed(2)),
-      backgroundColor: countryAgg.map(d => COUNTRY_COLOR[d.label]),
-      borderRadius: 2,
-      barThickness: 14,
-    }]
-  },
-  options: {
-    indexAxis: 'y',
-    responsive: true,
-    plugins: { legend: { display: false },
-      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.parsed.x.toFixed(2) + '%' } } },
-    scales: {
-      x: { grid: { color: '#1B222C' }, ticks: { callback: v => v+'%' } },
-      y: { grid: { display: false }, ticks: { font: { size: 12, family: "'Inter'" } } }
+function renderSectorChart(){
+  if(sectorChart) sectorChart.destroy();
+  sectorChart = new Chart(document.getElementById('sectorChart'), {
+    type: 'bar',
+    data: {
+      labels: sectorAgg.map(d => sectorLabel(d.label)),
+      datasets: [{
+        data: sectorAgg.map(d => +(d.value*100).toFixed(2)),
+        backgroundColor: sectorAgg.map(d => SECTOR_COLOR[d.label]),
+        borderRadius: 2,
+        barThickness: 14,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.parsed.x.toFixed(2) + '%' } } },
+      scales: {
+        x: { grid: { color: '#1B222C' }, ticks: { callback: v => v+'%' } },
+        y: { grid: { display: false }, ticks: { font: { size: 11, family: CHART_NAME_FONT } } }
+      }
     }
-  }
-});
+  });
+}
+
+function renderCountryChart(){
+  if(countryChart) countryChart.destroy();
+  countryChart = new Chart(document.getElementById('countryChart'), {
+    type: 'bar',
+    data: {
+      labels: countryAgg.map(d => dispCountry(d.label)),
+      datasets: [{
+        data: countryAgg.map(d => +(d.value*100).toFixed(2)),
+        backgroundColor: countryAgg.map(d => COUNTRY_COLOR[d.label]),
+        borderRadius: 2,
+        barThickness: 14,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.parsed.x.toFixed(2) + '%' } } },
+      scales: {
+        x: { grid: { color: '#1B222C' }, ticks: { callback: v => v+'%' } },
+        y: { grid: { display: false }, ticks: { font: { size: 11, family: CHART_NAME_FONT } } }
+      }
+    }
+  });
+}
+
+renderSectorChart();
+renderCountryChart();
 
 /* ---------------- Value map (bubble) ---------------- */
 let valueMapChart = null;
@@ -957,7 +1007,7 @@ function applyFiltersAndRender(){
       <td class="tk">${d.t}</td>
       <td>${dispName(d)}</td>
       <td><span class="dot" style="background:${COUNTRY_COLOR[d.c]}"></span>${dispCountry(d.c)}</td>
-      <td><div class="exch-cell">${ex.name}${ibkrBadge}</div><div class="exch-ccy">${d.cur}${ex.note?' · '+ex.note:''}</div></td>
+      <td><div class="exch-cell">${dispExch(d.x)}${ibkrBadge}</div><div class="exch-ccy">${d.cur}${dispExchNote(d.x)?' · '+dispExchNote(d.x):''}</div></td>
       <td><span class="pill">${sectorShort(d.s)}</span></td>
       <td class="num">${(d.w*100).toFixed(2)}%</td>
       <td class="num">${(d.dy*100).toFixed(1)}%${d._dyLive?`<span class="live-dot" title="${t('live.title',{q:d._fundQuarter,d:d._fundAsOf})}"></span>`:''}</td>
@@ -1348,9 +1398,12 @@ function renderSectorDrift(){
         {label: t('chart.target'), data: labels.map(s => +(tgt[s]*100).toFixed(2)), backgroundColor:'#3E4A5A', borderRadius:2},
       ]},
     options:{ responsive:true,
-      plugins:{legend:{position:'bottom', labels:{font:{size:11,family:"'Inter'"},boxWidth:9,padding:12}},
+      plugins:{legend:{position:'bottom', labels:{font:{size:11,family:CHART_NAME_FONT},boxWidth:9,padding:12}},
         tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+c.parsed.y.toFixed(2)+'%'}}},
-      scales:{ x:{grid:{display:false}, ticks:{font:{size:10}}},
+      // The sector names on this axis asked for no family at all, so they came
+      // out in the mono default while the very same names in the sector chart
+      // above came out in Inter.
+      scales:{ x:{grid:{display:false}, ticks:{font:{size:10,family:CHART_NAME_FONT}}},
                y:{grid:{color:'#1B222C'}, ticks:{callback:v=>v+'%'}}}}
   });
 }
@@ -1573,8 +1626,12 @@ function setLang(lang){
   // guarded: a section that has not loaded yet must not stop the others.
   // loadStatus is in the list because the status bar opts out of applyI18n
   // once it holds real data — see setStatusLine.
+  // Every chart carrying translated text belongs in this list. The sector,
+  // country and drift charts were missing from it, which is exactly why their
+  // labels stayed in the old language while the rest of the page switched.
   [rebuildEffectiveData, renderKPIs, renderValueMap, applyFiltersAndRender,
    renderTicker, renderNav, renderPosTable, renderCash, renderPosKpis,
+   renderSectorChart, renderCountryChart, renderSectorDrift,
    loadStatus].forEach(fn => {
     try { if(typeof fn === 'function') fn(); } catch(e){ /* not loaded yet */ }
   });

@@ -90,6 +90,57 @@ test('the language handler re-labels the tray instead of rebuilding it', () => {
 // and reporting nothing.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Updates.
+//
+// The updater cannot be exercised here at all — it needs an installed build, a
+// published release and a network. What can be pinned are the decisions that
+// are easy to undo by accident and expensive to get wrong.
+// ---------------------------------------------------------------------------
+
+test('updates are never downloaded without asking', () => {
+  assert.match(
+    CODE, /autoUpdater\.autoDownload\s*=\s*false/,
+    'autoDownload must stay off. It defaults to true, which would pull a ' +
+    '100 MB installer the moment the app opens, on whatever connection the ' +
+    'user is on.');
+});
+
+test('the backend is stopped and waited for before the installer runs', () => {
+  const fn = /async function installUpdateNow\(\)[\s\S]*?\n}/.exec(CODE);
+  assert.ok(fn, 'installUpdateNow() not found');
+
+  const stopAt = fn[0].indexOf('await stopBackendAndWait()');
+  const installAt = fn[0].indexOf('quitAndInstall()');
+  assert.ok(stopAt !== -1,
+    'installUpdateNow must await stopBackendAndWait(). The frozen backend ' +
+    'lives inside the directory NSIS is about to overwrite, and a running ' +
+    'process holds its own executable open on Windows.');
+  assert.ok(stopAt < installAt,
+    'the backend must be gone before quitAndInstall(), not after.');
+});
+
+test('electron-updater ships with the app rather than only building it', () => {
+  assert.ok(
+    PKG.dependencies && PKG.dependencies['electron-updater'],
+    'electron-updater must be a runtime dependency. As a devDependency it ' +
+    'would work in development and be missing from the installed app.');
+  assert.ok(
+    !(PKG.devDependencies || {})['electron-updater'],
+    'electron-updater should not also be a devDependency');
+  assert.ok(
+    PKG.build.files.some(f => f.startsWith('node_modules')),
+    'build.files is an explicit allowlist, so node_modules has to be named ' +
+    'in it or the updater is absent from the packaged app.');
+});
+
+test('the publish target is configured, or no update can ever be found', () => {
+  const pub = PKG.build.publish;
+  assert.ok(Array.isArray(pub) && pub.length, 'build.publish is missing');
+  assert.strictEqual(pub[0].provider, 'github');
+  assert.ok(pub[0].owner && pub[0].repo, 'publish needs owner and repo');
+});
+
 test('every file desktop/main.js loads is in the packaged files list', () => {
   const files = PKG.build.files;
   for (const required of ['main.js', 'preload.js', 'package.json']) {

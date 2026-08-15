@@ -105,10 +105,24 @@ repository is public; git history preserves deleted files, so a single accidenta
 undoable by deleting it later. `.gitignore` covers `*.db`, `.env`, `build/`, `node_modules/`,
 and `.venv/`. Run `git status` and read the list before any first commit in a new clone.
 
-Release sequence: bump `desktop/package.json`, re-freeze the backend if Python changed, rebuild
-the installer, verify the packaged build, update `CHANGELOG.md`, commit, `git tag -a vX.Y.Z`,
-push both branch and tag, then attach the installer to a GitHub Release. The installer is never
-committed — 110 MB in history would burden every clone forever.
+Release sequence: bump `desktop/package.json`, re-freeze the backend if **anything under
+`static/` or `docs/` changed** (both are bundled into the frozen backend, so a frontend-only fix
+still needs a re-freeze), rebuild the installer, verify the packaged build, update
+`CHANGELOG.md`, commit, `git tag -a vX.Y.Z`, push both branch and tag, then attach the release
+assets. The installer is never committed — 110 MB in history would burden every clone forever.
+
+**A release must carry all three assets, not just the installer:**
+
+```bash
+gh release create vX.Y.Z "build/desktop-dist/Horizon Holdings Setup X.Y.Z.exe" "build/desktop-dist/latest.yml" "build/desktop-dist/Horizon Holdings Setup X.Y.Z.exe.blockmap" --title "..." --notes-file -
+```
+
+`latest.yml` is what `electron-updater` actually reads. Without it every installed copy checks,
+finds nothing it understands, and reports "up to date" forever — silently, with no error
+anywhere. The `.blockmap` lets the updater download only changed chunks. Auto-update is
+configured by `build.publish` in `desktop/package.json`; `electron-updater` is a **runtime**
+dependency and `node_modules/**/*` is named in `build.files`, because that array is an explicit
+allowlist and anything absent from it silently vanishes from the packaged app.
 
 ## Architecture
 

@@ -16,6 +16,7 @@
  */
 
 const { app, BrowserWindow, Tray, Menu, dialog, shell, nativeImage, Notification, ipcMain } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { spawn, execFile } = require('child_process');
 const http = require('http');
 const net = require('net');
@@ -34,6 +35,9 @@ let logStream = null;
 let userDataDir = null;
 let isQuitting = false;
 let isRestarting = false;   // suppresses the "backend died" alarm during a deliberate restart
+let updateState = 'idle';   // idle | checking | downloading | ready — drives the tray label
+let updateProgress = 0;     // percent, while downloading
+let updateVersion = null;   // version waiting to be installed
 const backendLog = [];   // tail kept in memory so a startup failure can be shown
 
 // ---------------------------------------------------------------- logging
@@ -423,6 +427,22 @@ const TRAY_STRINGS = {
     alreadyCurrent: 'Already current for {q}; nothing re-fetched.',
     fundResult: '{n} tickers updated, {f} failed.',
     importedTitle: 'Database imported', importedBody: 'Previous data saved as:\n{f}',
+    checkUpdates: 'Check for updates…',
+    checking: 'Checking for updates…',
+    downloading: 'Downloading update… {p}%',
+    restartToUpdate: 'Restart to install {v}',
+    availTitle: 'Update available',
+    availBody: 'Version {v} is available. You are running {c}.\n\nDownload it now? The download is about {size} and the app keeps working while it runs.',
+    btnDownload: 'Download', btnLater: 'Not now',
+    noneTitle: 'No update available',
+    noneBody: 'You are running the latest version ({c}).',
+    readyTitle: 'Update ready to install',
+    readyBody: 'Version {v} has been downloaded. Restart now to install it?\n\nYour database, settings and NAV history are not touched by an update.',
+    btnRestart: 'Restart now', btnInstallLater: 'Install on next quit',
+    failTitle: 'Could not check for updates',
+    failBody: 'The check failed. This is usually a network problem and nothing is wrong with your data.\n\n{err}',
+    devTitle: 'Updates are disabled in development',
+    devBody: 'This copy is running from source (npm start), not from an installed build, so there is nothing for the updater to replace. Build an installer to test updating.',
   },
   zh: {
     show: '打开窗口',
@@ -445,6 +465,22 @@ const TRAY_STRINGS = {
     alreadyCurrent: '{q} 本季度已是最新,未重复请求。',
     fundResult: '{n} 支已更新,{f} 支失败。',
     importedTitle: '数据库已导入', importedBody: '原数据已备份为:\n{f}',
+    checkUpdates: '检查更新…',
+    checking: '正在检查更新…',
+    downloading: '正在下载更新… {p}%',
+    restartToUpdate: '重启并安装 {v}',
+    availTitle: '有可用更新',
+    availBody: '发现新版本 {v},当前版本为 {c}。\n\n现在下载吗?约 {size},下载期间应用可以继续使用。',
+    btnDownload: '下载', btnLater: '暂不',
+    noneTitle: '已是最新版本',
+    noneBody: '当前已是最新版本({c})。',
+    readyTitle: '更新已就绪',
+    readyBody: '版本 {v} 已下载完成。现在重启安装吗?\n\n数据库、设置与净值历史不会被更新影响。',
+    btnRestart: '立即重启', btnInstallLater: '下次退出时安装',
+    failTitle: '检查更新失败',
+    failBody: '检查失败,通常是网络问题,你的数据没有任何异常。\n\n{err}',
+    devTitle: '开发模式下不检查更新',
+    devBody: '当前从源码运行(npm start),不是安装版,更新程序没有可替换的目标。要测试更新,请先打包安装程序。',
   },
 };
 
@@ -493,6 +529,182 @@ function writeSettings(userData, patch) {
   fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), 'utf8');
   fs.renameSync(tmp, target);
   return merged;
+}
+
+// ---------------------------------------------------------------- updates
+/**
+ * Shipping a new version used to mean the user uninstalling the old one and
+ * downloading an installer by hand, which is the reason most small apps stop
+ * being updated: not that the developer stops fixing things, but that nobody
+ * ever finds out they did.
+ *
+ * electron-updater reads the `latest.yml` that electron-builder publishes
+ * alongside the installer on the GitHub Release, compares its version with this
+ * build's, and downloads the new installer if it is newer. Three deliberate
+ * choices here:
+ *
+ *   - autoDownload is OFF. The installer is over 100 MB and the default would
+ *     start pulling it the moment the app opened, on whatever connection the
+ *     user happens to be on. Ask first.
+ *   - autoInstallOnAppQuit is OFF by default too, and turned on only once the
+ *     user has explicitly chosen "install later". Otherwise a download they
+ *     never agreed to install would be applied when they next closed the app.
+ *   - Nothing is checked when running from source. Without an installed build
+ *     there is nothing to replace, and electron-updater fails with an error
+ *     about a missing dev-app-update.yml that means nothing to a reader.
+ *
+ * What an update does NOT touch is as important as what it does: the database,
+ * .env and settings live in the per-user data directory, never in the install
+ * directory, precisely so that replacing the install directory wholesale is
+ * safe. That is the same rule as `config.FROZEN`, seen from the other end.
+ */
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+autoUpdater.logger = { info: log, warn: log, error: log, debug: () => {} };
+
+let updateManual = false;      // did a human ask, or was this the periodic check?
+let updateChecking = false;    // one check at a time
+
+function humanSize(bytes) {
+  if (!bytes) return '—';
+  return (bytes / (1024 * 1024)).toFixed(0) + ' MB';
+}
+
+function initUpdater() {
+  autoUpdater.on('update-available', async info => {
+    log(`update available: ${info.version} (running ${app.getVersion()})`);
+    updateChecking = false;
+    updateState = 'idle';
+    if (refreshTray) refreshTray();
+
+    const size = humanSize((info.files && info.files[0] && info.files[0].size) || 0);
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: tr('availTitle'),
+      message: tr('availTitle'),
+      detail: tr('availBody', { v: info.version, c: app.getVersion(), size }),
+      buttons: [tr('btnDownload'), tr('btnLater')],
+      defaultId: 0,
+      cancelId: 1,          // dismissing must mean "not now", never "download"
+    });
+    if (response !== 0) { log('user declined the update'); return; }
+
+    updateState = 'downloading';
+    if (refreshTray) refreshTray();
+    autoUpdater.downloadUpdate().catch(err => {
+      updateState = 'idle';
+      if (refreshTray) refreshTray();
+      log(`update download failed: ${err.message}`);
+    });
+  });
+
+  autoUpdater.on('update-not-available', info => {
+    log(`no update available (running ${app.getVersion()}, latest ${info.version})`);
+    updateChecking = false;
+    updateState = 'idle';
+    if (refreshTray) refreshTray();
+    // Only say so if a human asked. An automatic check that finds nothing
+    // should be completely silent.
+    if (updateManual) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: tr('noneTitle'),
+        message: tr('noneTitle'),
+        detail: tr('noneBody', { c: app.getVersion() }),
+        buttons: ['OK'],
+      });
+    }
+  });
+
+  autoUpdater.on('download-progress', p => {
+    updateState = 'downloading';
+    updateProgress = Math.round(p.percent || 0);
+    if (refreshTray) refreshTray();
+  });
+
+  autoUpdater.on('update-downloaded', async info => {
+    log(`update downloaded: ${info.version}`);
+    updateState = 'ready';
+    updateVersion = info.version;
+    if (refreshTray) refreshTray();
+
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: tr('readyTitle'),
+      message: tr('readyTitle'),
+      detail: tr('readyBody', { v: info.version }),
+      buttons: [tr('btnRestart'), tr('btnInstallLater')],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) return installUpdateNow();
+
+    // They chose later, so now it is fair to apply it on the next quit.
+    autoUpdater.autoInstallOnAppQuit = true;
+    log('update will be installed on next quit');
+  });
+
+  autoUpdater.on('error', err => {
+    updateChecking = false;
+    updateState = 'idle';
+    if (refreshTray) refreshTray();
+    log(`updater error: ${err && err.message}`);
+    if (updateManual) {
+      dialog.showMessageBox({
+        type: 'warning',
+        title: tr('failTitle'),
+        message: tr('failTitle'),
+        detail: tr('failBody', { err: (err && err.message) || String(err) }),
+        buttons: ['OK'],
+      });
+    }
+  });
+}
+
+/**
+ * Stop the backend BEFORE handing over to the installer.
+ *
+ * The frozen backend lives inside the installation directory, which NSIS is
+ * about to overwrite. A running process holds its own executable open on
+ * Windows, so the installer would either fail or leave a half-updated
+ * directory. quitAndInstall() triggers the normal quit path, but that path
+ * kills the backend without waiting for it to actually exit — and "asked it to
+ * die" is not the same as "it is gone".
+ */
+async function installUpdateNow() {
+  log('installing update: stopping backend first');
+  isQuitting = true;
+  await stopBackendAndWait();
+  autoUpdater.quitAndInstall();
+}
+
+async function checkForUpdates(manual) {
+  if (!app.isPackaged) {
+    log('update check skipped: running from source');
+    if (manual) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: tr('devTitle'),
+        message: tr('devTitle'),
+        detail: tr('devBody'),
+        buttons: ['OK'],
+      });
+    }
+    return;
+  }
+  if (updateChecking || updateState === 'downloading' || updateState === 'ready') return;
+
+  updateManual = manual;
+  updateChecking = true;
+  updateState = 'checking';
+  if (refreshTray) refreshTray();
+  log(`checking for updates (manual=${manual})`);
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    // The 'error' event handler above already reported it.
+    log(`update check threw: ${err && err.message}`);
+  }
 }
 
 /**
@@ -721,6 +933,17 @@ function buildTray(userData) {
       },
       { type: 'separator' },
       { label: tr('importDb'), click: () => importDatabaseNow(userData) },
+      // The update entry reports its own state rather than being a dead
+      // "Check for updates…" that gives no sign anything happened. A download
+      // running in the background with no visible trace is indistinguishable
+      // from a click that did nothing.
+      updateState === 'ready'
+        ? { label: tr('restartToUpdate', { v: updateVersion }), click: installUpdateNow }
+        : updateState === 'downloading'
+          ? { label: tr('downloading', { p: updateProgress }), enabled: false }
+          : updateState === 'checking'
+            ? { label: tr('checking'), enabled: false }
+            : { label: tr('checkUpdates'), click: () => checkForUpdates(true) },
       { label: tr('howBuilt'), click: openGuide },
       { label: tr('openData'), click: () => shell.openPath(userData) },
       { label: `${tr('version')} ${app.getVersion()}`, enabled: false },
@@ -821,6 +1044,15 @@ if (!app.requestSingleInstanceLock()) {
     const startHidden = process.argv.includes('--hidden');
     buildTray(userData);
     createWindow(!startHidden);
+
+    // The first seconds belong to starting the backend and drawing the window;
+    // a network request competing with that is the wrong priority. And the
+    // periodic check matters more than it looks: this app is designed to sit in
+    // the tray for weeks, so "check once at launch" could mean checking twice a
+    // month.
+    initUpdater();
+    setTimeout(() => checkForUpdates(false), 15_000);
+    setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000);
   });
 
   // Deliberately NOT quitting here. Closing the window is "put it away", and
