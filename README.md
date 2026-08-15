@@ -24,12 +24,28 @@ your positions are stored in a single file on your disk and never leave it.
 
 ## Install
 
+| Your OS | Status |
+|---|---|
+| **Windows** | Prebuilt installer on the [Releases page](https://github.com/vansdardy/horizon-holdings-app/releases) |
+| **macOS** | No prebuilt package yet — [build from source](#build-from-source), about 20 minutes |
+| **Linux** | No prebuilt package yet — [build from source](#build-from-source), about 20 minutes |
+
+**Why there is no Mac or Linux download.** The backend is bundled with PyInstaller, which
+**cannot cross-compile**: producing a macOS app requires running the build on a Mac, and a
+Linux one on Linux. This project has only been built on Windows so far. Nothing in the code
+is Windows-specific — the application runs fine on all three — so if you build it on your own
+machine it will work. The usual fix for a project that wants all three is a continuous
+integration service that builds on each OS, which is worth knowing about but is more
+machinery than a single-user app needs.
+
+### Windows: download and run
+
 Download the latest `Horizon Holdings Setup <version>.exe` from the
 [**Releases page**](https://github.com/vansdardy/horizon-holdings-app/releases) and run it.
 It installs for the current user only, so no administrator password is required. Python is
 bundled inside — you do **not** need to install it.
 
-### Windows will warn you, and here is why
+#### Windows will warn you, and here is why
 
 The installer is not code-signed. A signing certificate costs money each year and does not
 by itself make software safer, so this project does not have one. You will see one of two
@@ -44,6 +60,17 @@ things:
 turned *off* permanently — Windows does not allow turning it back on without reinstalling —
 so think before you disable it. If you would rather not, [build from
 source](#build-from-source) instead; that path is unaffected.
+
+### macOS: expect Gatekeeper to refuse it
+
+If you build the app yourself on a Mac, macOS will not open it, because it is unsigned and
+unnotarised. macOS is stricter than Windows here: there is no "run anyway" button in the
+first dialog. Either right-click the app and choose **Open** (which offers an override the
+plain double-click does not), or allow it once under **System Settings → Privacy & Security**,
+where a blocked app appears with an *Open Anyway* button shortly after you try to launch it.
+
+Signing and notarising properly requires a paid Apple Developer account. For an app you built
+yourself, on your own machine, the override is the normal path.
 
 ### After installing
 
@@ -209,14 +236,22 @@ to `1` and the numbers are fake.
 **On a fresh install, verify the ticker symbols first.** Exchanges rename things, and this
 catches it immediately rather than as a mysterious failure weeks later:
 
+**Windows (PowerShell):**
+
 ```powershell
 curl.exe http://127.0.0.1:8000/api/check_symbols
 ```
 
-> **Windows: it must be `curl.exe`, not `curl`.** In PowerShell, `curl` is an alias for a
+**macOS / Linux:**
+
+```bash
+curl http://127.0.0.1:8000/api/check_symbols
+```
+
+> **On Windows it must be `curl.exe`, not `curl`.** In PowerShell, `curl` is an alias for a
 > different command, and `curl -X POST ...` fails with *"A parameter cannot be found that
 > matches parameter name 'X'"* — an error that tells you nothing about the real cause. On
-> macOS and Linux, plain `curl` is correct.
+> macOS and Linux, plain `curl` is correct and already installed.
 
 `"healthy": true` means all 78 companies and 6 exchange rates resolved. Press `Ctrl+C` to
 stop the server.
@@ -262,7 +297,7 @@ npm run dist
 The result lands in `build/desktop-dist/`.
 
 <details>
-<summary><b>If the build fails with "Cannot create symbolic link"</b></summary>
+<summary><b>Windows only: if the build fails with "Cannot create symbolic link"</b></summary>
 
 The packaging tool downloads a code-signing toolkit containing macOS symlinks, and creating
 symlinks on Windows needs a privilege ordinary accounts lack — even though nothing here is
@@ -279,11 +314,17 @@ Then run `npm run dist` again. Enabling Windows Developer Mode also fixes it per
 
 ### Running the tests
 
-```bash
+**Windows:**
+
+```powershell
 .venv\Scripts\python.exe -m pytest tests/ -q
+node --test tests/js/*.test.js
 ```
 
+**macOS / Linux:**
+
 ```bash
+.venv/bin/python -m pytest tests/ -q
 node --test tests/js/*.test.js
 ```
 
@@ -323,7 +364,10 @@ app is running can silently lose them.** Use any of these instead:
 1. The **Backup database** button in the app.
 2. The API, while the app is running:
    ```powershell
-   curl.exe -X POST http://127.0.0.1:8000/api/backup
+   curl.exe -X POST http://127.0.0.1:8000/api/backup    # Windows
+   ```
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/backup        # macOS / Linux
    ```
 3. With the app fully stopped, copy all three files together:
    ```powershell
@@ -360,6 +404,20 @@ cp .env.example .env
 | `FETCH_LOOKBACK` | `10d` | How far back each fetch reaches, which is what fills in missed days |
 | `BASE_CCY` | `CHF` | Reporting currency: CHF, USD, EUR, GBP, CAD, JPY or DKK |
 | `MARKETDATA_MOCK` | `0` | Set to `1` for fake offline data while developing |
+
+To override a setting for one run only, without editing the file — note that the syntax is
+different in every shell, which catches people copying between operating systems:
+
+```powershell
+$env:PORT="8001"; .venv\Scripts\python.exe server.py     # Windows PowerShell
+```
+
+```bash
+PORT=8001 .venv/bin/python server.py                     # macOS / Linux
+```
+
+These last only as long as that terminal window. That is exactly why `.env` exists: a
+program meant to run every day needs its settings in a file that survives a reboot.
 
 Changes take effect on restart. The startup log prints each setting and where it came from,
 and the app refuses to start on an invalid value rather than failing hours later.
@@ -434,7 +492,8 @@ Interactive documentation at <http://127.0.0.1:8000/docs> while the backend is r
 | `npm` or `node` not recognised after installing | Your terminal predates the install. Open a new one |
 | `Cannot find module ...tests\js` | Pass the glob: `node --test tests/js/*.test.js` |
 | Edited Python, app runs the old code | Re-freeze the backend (step 4). The app prefers the frozen copy |
-| Page says backend not connected | Backend not running, or the port is taken. Try `PORT=8001` |
+| Page says backend not connected | Backend not running, or the port is taken. Change `PORT` — see Configuration for the syntax your shell needs |
+| macOS refuses to open the app | Unsigned build. Right-click → **Open**, or allow it in System Settings → Privacy & Security |
 | Red MOCK banner | `MARKETDATA_MOCK=1` is set. Remove it and restart |
 | Fetch returns 409 | A company you hold has no price today; the day was deliberately not recorded. The message names which |
 | Fetch returns 500 | Network or data-source problem. See `last_fetch_error` in `/api/status` |
