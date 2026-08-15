@@ -756,6 +756,11 @@ const dispCountry = c => LANG === 'zh' ? c     : (COUNTRY_EN[c] || c);
 const dispInd     = d => LANG === 'zh' ? d.ind : (d.ind_en || d.ind);
 const dispMoat    = d => LANG === 'zh' ? d.m   : (d.m_en   || d.m);
 const dispExch    = x => { const e = exchInfo(x); return LANG === 'zh' ? e.name : (e.name_en || EXCH_EN[x] || x); };
+// Rows from /api/positions carry their own name/name_en, rather than being
+// looked up in DATA — a position can exist for a ticker that has since left the
+// universe, and it still has to render. So it needs its own display helper;
+// dispName() above works on DATA rows and does not fit these.
+const dispPosName = r => LANG === 'zh' ? r.name : (r.name_en || r.name);
 const dispExchNote = x => { const e = exchInfo(x); return LANG === 'zh' ? e.note : e.note_en; };
 const sectorLabel = s => LANG === 'zh' ? (SECTOR_ZH[s] || s) : s;
 const sectorShort = s => LANG === 'zh' ? (SECTOR_ZH[s] || s).split(' ')[0] : s;
@@ -1356,7 +1361,12 @@ function renderPosTable(){
     if(onlyHeld && !(r.shares > 0)) return false;
     const rec = DATA_BY_TICKER[r.ticker];
     if(countryFilter && (!rec || rec.c !== countryFilter)) return false;
-    if(q && !(r.ticker.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))) return false;
+    // Search BOTH names regardless of the interface language. Someone reading
+    // the English page may still know a company by its Chinese name, and
+    // matching only the displayed one makes the other name silently unfindable.
+    if(q && !(r.ticker.toLowerCase().includes(q)
+              || (r.name || '').toLowerCase().includes(q)
+              || (r.name_en || '').toLowerCase().includes(q))) return false;
     return true;
   });
   rows.sort((a,b) => (b.mv_usd||0) - (a.mv_usd||0) || b.target_weight - a.target_weight);
@@ -1378,7 +1388,7 @@ function renderPosTable(){
     const rec = DATA_BY_TICKER[r.ticker];
     return `<tr class="${held?'':'muted-row'}" data-t="${r.ticker}">
       <td class="tk">${r.ticker}</td>
-      <td>${r.name}${(() => {
+      <td>${dispPosName(r)}${(() => {
         if(!rec) return `<div style="font-size:10px;color:var(--text-faint);font-family:var(--mono)">${r.ccy}</div>`;
         const ex = exchInfo(rec.x);
         const badge = ex.ibkr

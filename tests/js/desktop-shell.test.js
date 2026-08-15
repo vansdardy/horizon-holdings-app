@@ -168,6 +168,50 @@ test('the publish target is configured, or no update can ever be found', () => {
   assert.ok(pub[0].owner && pub[0].repo, 'publish needs owner and repo');
 });
 
+// ---------------------------------------------------------------------------
+// The installer's desktop-icon checkbox.
+//
+// None of this can be executed here — it is NSIS, compiled into the installer
+// and run by Windows. What is worth pinning is the interaction that no build
+// error would catch: an update runs the installer SILENTLY, so a checkbox read
+// on an update reads nothing, and the user's answer has to come from somewhere
+// that survives between runs.
+// ---------------------------------------------------------------------------
+
+const NSH_PATH = path.join(ROOT, 'desktop', 'build', 'installer.nsh');
+
+test('the installer script exists and is wired into the build', () => {
+  assert.ok(fs.existsSync(NSH_PATH), 'desktop/build/installer.nsh is missing');
+  assert.strictEqual(
+    PKG.build.nsis.createDesktopShortcut, false,
+    'createDesktopShortcut must be false so the custom script owns the ' +
+    'shortcut. With both creating it, the icon appears whatever the checkbox ' +
+    'said.');
+});
+
+test('a silent install replays the stored answer instead of the checkbox', () => {
+  const nsh = fs.readFileSync(NSH_PATH, 'utf8');
+
+  assert.match(nsh, /\$\{If\}\s+\$\{Silent\}/,
+    'customInstall must detect a silent run — that is what an update is.');
+  assert.match(nsh, /ReadRegStr\s+\$R0\s+SHCTX/,
+    'a silent run must read the remembered choice from the registry.');
+  assert.match(nsh, /WriteRegStr\s+SHCTX[^\n]*"DesktopShortcut"/,
+    'the choice must be written down when a human makes it, or an update has ' +
+    'nothing to replay.');
+});
+
+test('uninstall does not erase the remembered choice', () => {
+  const nsh = fs.readFileSync(NSH_PATH, 'utf8');
+  const un = /!macro customUnInstall[\s\S]*?!macroend/.exec(nsh);
+  assert.ok(un, 'customUnInstall not found');
+  assert.doesNotMatch(
+    un[0], /DeleteRegKey/,
+    'customUnInstall must not delete the preference key. An update runs the ' +
+    'old uninstaller first, so this would erase the answer moments before the ' +
+    'install replays it, and every update would restore the desktop icon.');
+});
+
 test('every file desktop/main.js loads is in the packaged files list', () => {
   const files = PKG.build.files;
   for (const required of ['main.js', 'preload.js', 'package.json']) {

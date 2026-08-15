@@ -9,6 +9,33 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.9.0
+
+**Added**
+
+- **The installer asks before putting an icon on your desktop.** A checkbox on
+  a new page after the install location, ticked by default because that is what
+  Windows installers do, but yours to untick.
+
+  The awkward part is not the checkbox. An *update* runs the same installer
+  silently, with no user and no dialogs, so a naive version would read an
+  unticked box on every update and delete the desktop icon of someone who wanted
+  one — or put one back, every release, on the desktop of someone who did not.
+  The answer is recorded when a human gives it and replayed on silent installs.
+  Uninstalling deliberately leaves that one registry value behind, because an
+  update runs the old uninstaller before the new install, and erasing the answer
+  there would lose it moments before it is needed.
+
+**Fixed**
+
+- **Company names in "My Positions" stayed in Chinese in the English
+  interface.** The API had been returning both names since v1.6.0; the table
+  simply rendered the Chinese one. Searching now matches either name whatever
+  the interface language, since someone reading the English page may still know
+  a company by its Chinese name.
+
+---
+
 ## v1.8.0
 
 The first release that existing installs can take automatically — v1.7.0 added

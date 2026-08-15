@@ -1,7 +1,7 @@
 {
   "name": "horizon-holdings-desktop",
   "productName": "Horizon Holdings",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Desktop shell for the Horizon Holdings portfolio NAV service",
   "author": "Horizon Holdings",
   "main": "main.js",
@@ -52,8 +52,9 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "Horizon Holdings"
+      "createDesktopShortcut": false,
+      "shortcutName": "Horizon Holdings",
+      "include": "build/installer.nsh"
     }
   },
   "dependencies": {
