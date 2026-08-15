@@ -534,6 +534,23 @@ Start-Process : An Application Control policy has blocked this file.
 
 ---
 
+## 许可 / License
+
+本项目代码以 **MIT** 许可发布(见 [LICENSE](LICENSE))—— 可自由使用、修改、商用,
+保留版权声明即可。
+
+**但 MIT 不覆盖项目内附的第三方组件**,它们各有各的许可,其中有些对再分发方有要求:
+
+| 组件 | 许可 | 要求 |
+|---|---|---|
+| Chart.js 4.5.1 | MIT | 保留版权声明 |
+| Source Serif 4 / Inter / IBM Plex Mono | SIL OFL 1.1 | 许可文本须随字体一起分发;不得单独出售字体 |
+| Python / Electron / 各依赖库 | PSF / MIT / BSD / Apache 2.0 | 打进安装包,非本仓库内容 |
+
+完整声明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
+---
+
 ## 免责声明
 
 本工具仅用于个人投资记录与组合结构对照,**不构成投资建议**。所有价格数据来自第三方免费接口,不保证准确性与时效性,不应用于交易决策。模型指数是假设性的,不是可投资的基金。投资有风险,可能损失本金。实际决策前请核实数据并咨询持牌财务顾问。

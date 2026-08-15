@@ -9,6 +9,34 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.2.1
+
+No functional change. The build guide ships inside the application, so
+improving it changes the product and earns a release.
+
+**Documentation**
+
+- How `.gitignore` actually works: pattern rules, and the rule that catches
+  everyone — ignoring a file that is already tracked does nothing, because
+  `.gitignore` only applies to files git is not already following.
+- Committed secrets: why "nobody reads my repository" is not protection, and
+  the recovery order that most people get backwards. Rotate the credential
+  first; rewriting history is tidying up afterwards, not the fix.
+- Installing the GitHub CLI on Windows, macOS, and Linux, plus the `PATH`
+  staleness that makes a freshly installed tool appear missing.
+- HTTPS versus SSH: what each proves, what each costs, and when to switch.
+- Licensing: what "no licence" actually means, the three families, and the
+  one question that picks between them.
+
+**Legal**
+
+- Added `LICENSE` (MIT).
+- Added `THIRD-PARTY-NOTICES.md`. The bundled fonts are under the SIL Open
+  Font Licence, which requires the licence text to be distributed with them —
+  an obligation this project had not been meeting.
+
+---
+
 ## v1.2.0
 
 **Added**

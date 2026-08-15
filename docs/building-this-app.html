@@ -336,7 +336,7 @@
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
         <span><b>~2,600</b> lines total</span>
-        <span><b>v1.2.0</b> shipped</span>
+        <span><b>v1.2.1</b> shipped</span>
       </div>
     </header>
 
@@ -1814,6 +1814,145 @@ git diff                      # exactly what changed, line by line</code></pre>
         </p>
       </div>
 
+      <h4>How .gitignore actually works</h4>
+      <p>
+        It is a plain text file at the top of the project, one pattern per line,
+        <code>#</code> for comments. The pattern rules are worth knowing properly,
+        because "I thought that was ignored" is a common way to publish something
+        you did not mean to.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Pattern</th><th>Matches</th></tr></thead>
+          <tbody>
+            <tr><td><code>portfolio.db</code></td><td>That name, in <em>any</em> directory</td></tr>
+            <tr><td><code>/portfolio.db</code></td><td>Only at the project root</td></tr>
+            <tr><td><code>build/</code></td><td>Directories called build, and everything inside</td></tr>
+            <tr><td><code>*.db</code></td><td>Any file with that extension</td></tr>
+            <tr><td><code>docs/**/*.png</code></td><td>PNGs at any depth under docs</td></tr>
+            <tr><td><code>!keep-this.db</code></td><td>An exception — un-ignores something an earlier pattern caught</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="aside note-bad">
+        <span class="tag">The rule that catches everybody</span>
+        <p>
+          <strong><code>.gitignore</code> only affects files git is not already
+          tracking.</strong> If you committed a file and <em>then</em> added it to
+          <code>.gitignore</code>, nothing happens — git keeps tracking it,
+          because you already told it to.
+        </p>
+        <p>
+          You have to untrack it explicitly. This removes it from the repository
+          while leaving your copy on disk:
+        </p>
+        <pre><code>git rm --cached portfolio.db</code></pre>
+        <p>
+          And note what that does <em>not</em> do: the file stays in every commit
+          that already contains it. Untracking stops the bleeding; it does not
+          clean the wound. See below.
+        </p>
+      </div>
+
+      <p>
+        Two commands make ignoring behave predictably instead of mysteriously:
+      </p>
+      <pre><code>git status --ignored           # what am I skipping?
+git check-ignore -v secrets.txt # WHICH rule is skipping this file?</code></pre>
+      <p>
+        The second one prints the file and line number of the pattern that
+        matched, which turns "why isn't this showing up" from a guessing game
+        into a lookup.
+      </p>
+
+      <h4>Secrets are the category that actually bites</h4>
+      <p>
+        Personal data like this project's database is easy to reason about,
+        because you know it is sensitive. Credentials are harder, because they
+        arrive innocently: a config file with the real value in it "just to test",
+        an API key pasted into a script, a <code>.env</code> that gets committed
+        the one time you run <code>git add -A</code> before writing the ignore
+        rule.
+      </p>
+      <p>
+        The reassuring story people tell afterwards is some version of "it was
+        expired anyway, and nobody reads my repository". Both halves are luck
+        rather than safety, and the second one is simply not true:
+      </p>
+      <ul>
+        <li>
+          <strong>Public activity is a firehose, and it is monitored.</strong>
+          GitHub publishes a stream of public events. Automated scanners watch it
+          and fetch new commits within seconds. There are well-documented cases of
+          cloud keys being used for crypto-mining minutes after being pushed.
+          Nobody has to be interested in <em>your project</em> for this to happen —
+          they are interested in the pattern <code>AKIA…</code>.
+        </li>
+        <li>
+          <strong>A repository is cloned, forked, and cached.</strong> Once fetched,
+          it is on somebody else's disk, and no amount of deleting on your side
+          reaches it.
+        </li>
+      </ul>
+      <p>
+        GitHub does help. <strong>Secret scanning</strong> recognises the formats of
+        many providers' tokens and notifies the provider, which will often revoke
+        the key on your behalf. <strong>Push protection</strong> goes further and
+        blocks the push before it lands. Both are on by default for public
+        repositories, and neither covers everything — a database of positions or a
+        homegrown token has no recognisable shape.
+      </p>
+
+      <h4>If you do commit a secret, the order matters</h4>
+      <p>
+        Most people get this backwards. They spend an hour rewriting history while
+        the credential is still live and still working.
+      </p>
+      <ol>
+        <li>
+          <strong>Rotate it first.</strong> Revoke the token, regenerate the key,
+          change the password. This is the only step that actually stops the
+          bleeding, and it works no matter who already has a copy. Do it before
+          you touch git at all.
+        </li>
+        <li>
+          <strong>Assume it was used.</strong> Check logs, billing, and access
+          history for the account it belonged to.
+        </li>
+        <li>
+          <strong>Then clean the history.</strong>
+          <code>git filter-repo</code> is the current tool for this
+          (<code>filter-branch</code> is deprecated and slow). Cleaning rewrites
+          every affected commit, which changes their identifiers.
+        </li>
+        <li>
+          <strong>Force-push, and warn anyone else.</strong> Rewritten history
+          breaks every existing clone; collaborators have to re-clone or reset.
+          This is why the cleanup is the painful step and rotation is the
+          effective one.
+        </li>
+        <li>
+          <strong>Ask GitHub Support to purge caches.</strong> Forks and pull
+          request views can retain the old objects even after you rewrite.
+        </li>
+        <li>
+          <strong>Stop it recurring.</strong> Keep real values in a
+          <code>.env</code> that is ignored, commit a <code>.env.example</code>
+          with the keys and fake values, and consider a pre-commit scanner such as
+          <code>gitleaks</code>.
+        </li>
+      </ol>
+      <div class="aside note-good">
+        <span class="tag">The honest summary</span>
+        <p>
+          A leaked credential is not recoverable by deletion — only by
+          replacement. Treat the git cleanup as tidying up after the incident, not
+          as the fix for it.
+        </p>
+      </div>
+
       <h4>What a commit should contain</h4>
       <p>
         One idea. The import feature and the guide rewrite are two commits, not
@@ -1911,6 +2050,104 @@ git diff                      # exactly what changed, line by line</code></pre>
         </figcaption>
       </figure>
 
+      <h3>Getting the tools onto your machine</h3>
+      <p>
+        Git on its own can push code. The <strong>GitHub CLI</strong>
+        (<code>gh</code>) adds the GitHub-specific things git knows nothing about,
+        because they are not part of git: creating repositories, opening pull
+        requests, and publishing releases with files attached.
+      </p>
+      <pre><code># Windows
+winget install GitHub.cli
+
+# macOS
+brew install gh
+
+# Debian / Ubuntu
+sudo apt install gh</code></pre>
+      <p>Then authenticate once. This opens a browser where you approve access:</p>
+      <pre><code>gh auth login
+gh auth status      # confirm, and see which protocol it set up for you</code></pre>
+
+      <div class="aside note-bad">
+        <span class="tag">The thing that will confuse you first</span>
+        <p>
+          You install a command-line tool, type its name, and the terminal insists
+          it does not exist. Nothing is broken. A shell reads the <code>PATH</code>
+          when it starts, so a terminal you had already open predates the
+          installation and will never see it.
+        </p>
+        <p>
+          Open a new terminal. This happened twice while building this project —
+          once for Node, once for <code>gh</code> — and it is far and away the most
+          common "the install failed" that is not an install failure.
+        </p>
+      </div>
+
+      <h3>HTTPS or SSH: how your machine proves who it is</h3>
+      <p>
+        Every push has to authenticate. GitHub offers two mechanisms, and which
+        one you are using shows up in the shape of the URL.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th></th><th>HTTPS</th><th>SSH</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>URL looks like</strong></td>
+              <td><code>https://github.com/user/repo.git</code></td>
+              <td><code>git@github.com:user/repo.git</code></td>
+            </tr>
+            <tr>
+              <td><strong>Proves identity with</strong></td>
+              <td>A token, kept by a credential helper</td>
+              <td>A private key file on your machine</td>
+            </tr>
+            <tr>
+              <td><strong>Setup</strong></td>
+              <td>None, if <code>gh</code> or Git Credential Manager is installed</td>
+              <td>Generate a key pair, upload the public half</td>
+            </tr>
+            <tr>
+              <td><strong>Expires</strong></td>
+              <td>Tokens often do</td>
+              <td>Keys do not</td>
+            </tr>
+            <tr>
+              <td><strong>Network</strong></td>
+              <td>Port 443 — effectively never blocked</td>
+              <td>Port 22 — blocked on some corporate and campus networks</td>
+            </tr>
+            <tr>
+              <td><strong>Best for</strong></td>
+              <td>Most people, most of the time</td>
+              <td>Frequent pushing, several machines, automation</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        One piece of history that still confuses people: GitHub removed password
+        authentication in 2021. If an HTTPS push asks for a "password", it wants a
+        personal access token, not your account password. A credential helper
+        exists so you are not typing that by hand — this project pushes over HTTPS
+        and never prompted once, because Git Credential Manager already held a
+        token.
+      </p>
+      <pre><code>git remote -v                                       # which am I using?
+git remote set-url origin git@github.com:user/repo.git   # switch to SSH</code></pre>
+      <p>Setting up SSH, if you want it:</p>
+      <pre><code>ssh-keygen -t ed25519 -C "you@example.com"   # press enter for the defaults
+gh ssh-key add ~/.ssh/id_ed25519.pub         # or paste it into GitHub settings
+ssh -T git@github.com                        # should greet you by username</code></pre>
+      <p>
+        Note what you upload: the <code>.pub</code> file. The other half of the
+        pair never leaves your machine, and anyone asking you for it is either
+        confused or phishing.
+      </p>
+
       <h3>Tags: naming the commit a release was built from</h3>
       <p>
         A <strong>tag</strong> is a permanent label on one snapshot. Versions move
@@ -1994,6 +2231,85 @@ git push origin v1.2.0</code></pre>
         audiences within the first screen: a link to the Releases page for users,
         and build instructions for developers. If a visitor cannot tell within
         fifteen seconds which of those they are, the README has failed.
+      </p>
+
+      <h3>Licensing: what other people may actually do with it</h3>
+      <p>
+        Publishing source code does not give anyone permission to use it. This
+        surprises people. With no licence file, ordinary copyright applies and the
+        default is <strong>all rights reserved</strong>: visitors may read the
+        code, and may not legally copy, modify, or build on it. A public
+        repository with no <code>LICENSE</code> is a common and almost always
+        unintended way of saying no.
+      </p>
+      <p>Licences come in three broad families.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Family</th><th>Examples</th><th>Someone may</th><th>You get</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Permissive</strong></td>
+              <td>MIT, Apache&nbsp;2.0, BSD</td>
+              <td>Use it in anything at all, including closed commercial products</td>
+              <td>Credit. Apache adds an explicit patent grant</td>
+            </tr>
+            <tr>
+              <td><strong>Copyleft</strong></td>
+              <td>GPL&nbsp;3.0, AGPL&nbsp;3.0</td>
+              <td>Use it — but distributing a modified version obliges them to publish their source too</td>
+              <td>Derivatives stay open</td>
+            </tr>
+            <tr>
+              <td><strong>Public domain</strong></td>
+              <td>CC0, Unlicense</td>
+              <td>Anything, without even crediting you</td>
+              <td>Nothing, by design</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Choosing between them is one question, and it is not a technical one:
+        <em>if a company took this, improved it, and sold it without telling you —
+        is that fine, or should they have to share the improvements back?</em>
+        "Fine" means permissive. "Share back" means copyleft. Everything else is
+        detail.
+      </p>
+      <p>
+        This project is MIT: the shortest permissive licence, the one Chart.js and
+        Electron themselves use, and the one that puts the fewest obstacles
+        between a student and reusing something they read here. Copyleft would
+        have been a defensible choice for different goals.
+      </p>
+
+      <div class="aside note-bad">
+        <span class="tag">Your licence does not cover what you bundled</span>
+        <p>
+          This repository ships Chart.js and three font families inside it, and
+          the installer additionally contains Python, Electron, and their whole
+          dependency trees. Choosing MIT says nothing about any of them. Each
+          keeps its own licence, and some place obligations on whoever
+          redistributes them.
+        </p>
+        <p>
+          The fonts here are under the SIL Open Font Licence, which requires the
+          licence text to travel with the fonts and forbids selling them on their
+          own. Meeting that took one file — <code>THIRD-PARTY-NOTICES.md</code> —
+          which was written only because this section was. Nearly every
+          application carries obligations like these, and a surprising number
+          quietly fail to meet them.
+        </p>
+      </div>
+
+      <p>
+        Mechanically it is one file called <code>LICENSE</code> at the root, with
+        no extension. GitHub detects it, shows the licence name on the repository
+        page, and makes the project findable by licence. Add your name and the
+        year; that is the whole ceremony.
       </p>
     </section>
 
@@ -2180,7 +2496,7 @@ git push origin v1.2.0</code></pre>
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.2.0 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.2.1 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.
