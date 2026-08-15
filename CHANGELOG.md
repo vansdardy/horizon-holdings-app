@@ -28,6 +28,17 @@ They are unsigned — see the README for what Windows will show you.
 
 **Fixed**
 
+- **The repository could not build its own installer.** `.gitignore` said
+  `build/`, which matches a directory of that name at *any* depth, so it had
+  been silently excluding `desktop/build/` — electron-builder's build resources
+  directory, holding the application icon and now the installer script. Those
+  are source, not output. Everything existed on the author's machine, so nothing
+  ever looked wrong; a fresh clone of this public repository simply could not
+  produce an installer, and had no app icon. The rule is now anchored to the
+  repository root (`/build/`), the resources are committed, and a test asserts
+  they are tracked. Exactly the same failure as `preload.js` missing from the
+  packaged files list in v1.3.0: works here, absent for everyone else, silent
+  either way.
 - **Company names in "My Positions" stayed in Chinese in the English
   interface.** The API had been returning both names since v1.6.0; the table
   simply rendered the Chinese one. Searching now matches either name whatever

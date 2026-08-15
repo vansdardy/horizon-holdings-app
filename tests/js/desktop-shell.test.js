@@ -180,6 +180,40 @@ test('the publish target is configured, or no update can ever be found', () => {
 
 const NSH_PATH = path.join(ROOT, 'desktop', 'build', 'installer.nsh');
 
+// ---------------------------------------------------------------------------
+// Build resources have to be IN the repository.
+//
+// `.gitignore` said `build/`, which matches a directory of that name at any
+// depth — so it silently excluded desktop/build/, the electron-builder build
+// resources directory holding the application icon and this installer script.
+// Those are source, not output. Every file existed on the author's machine, so
+// nothing looked wrong; a fresh clone simply could not build an installer.
+//
+// This is the same failure as preload.js missing from the packaged files list:
+// works here, absent for everyone else, silent either way.
+// ---------------------------------------------------------------------------
+
+test('the electron-builder build resources are tracked by git', () => {
+  const { execFileSync } = require('node:child_process');
+
+  let tracked;
+  try {
+    tracked = execFileSync('git', ['ls-files', 'desktop/build'],
+      { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
+  } catch (err) {
+    // No git available (a release tarball, say). Nothing to assert.
+    return;
+  }
+
+  for (const required of ['desktop/build/icon.ico', 'desktop/build/installer.nsh']) {
+    assert.ok(
+      tracked.includes(required),
+      `${required} is not tracked by git. It exists on this machine, so the ` +
+      'build works here — and a fresh clone cannot produce an installer. ' +
+      'Check that .gitignore\'s build rule is anchored (/build/), not bare.');
+  }
+});
+
 test('the installer script exists and is wired into the build', () => {
   assert.ok(fs.existsSync(NSH_PATH), 'desktop/build/installer.nsh is missing');
   assert.strictEqual(
