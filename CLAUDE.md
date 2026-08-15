@@ -75,6 +75,22 @@ Build the Windows installer into `build/desktop-dist/`:
 cd desktop && npm run dist
 ```
 
+### Repository and releases
+
+Public at `https://github.com/vansdardy/horizon-holdings-app`, `main` branch. Git Credential
+Manager is configured system-wide and already holds credentials, so pushes work without setup.
+`gh` is **not** installed, so GitHub Releases cannot be created from here.
+
+**`portfolio.db` must never be committed.** It holds real positions and cost basis, and the
+repository is public; git history preserves deleted files, so a single accidental commit is not
+undoable by deleting it later. `.gitignore` covers `*.db`, `.env`, `build/`, `node_modules/`,
+and `.venv/`. Run `git status` and read the list before any first commit in a new clone.
+
+Release sequence: bump `desktop/package.json`, re-freeze the backend if Python changed, rebuild
+the installer, verify the packaged build, update `CHANGELOG.md`, commit, `git tag -a vX.Y.Z`,
+push both branch and tag, then attach the installer to a GitHub Release. The installer is never
+committed — 110 MB in history would burden every clone forever.
+
 ## Architecture
 
 Import order is load-bearing: `config` must be imported before anything reads `os.environ`,
