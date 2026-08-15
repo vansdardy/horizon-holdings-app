@@ -312,8 +312,10 @@
       <li><a href="#p6"><span class="n">06</span><span>Running on three systems</span></a></li>
       <li><a href="#p7"><span class="n">07</span><span>Build it yourself</span></a></li>
       <li><a href="#p8"><span class="n">08</span><span>Shipping it</span></a></li>
-      <li><a href="#p9"><span class="n">09</span><span>Shipping the next change</span></a></li>
-      <li><a href="#p10"><span class="n">10</span><span>What transfers</span></a></li>
+      <li><a href="#p9"><span class="n">09</span><span>Keeping track of changes</span></a></li>
+      <li><a href="#p10"><span class="n">10</span><span>Getting it to other people</span></a></li>
+      <li><a href="#p11"><span class="n">11</span><span>Building with an AI assistant</span></a></li>
+      <li><a href="#p12"><span class="n">12</span><span>What transfers</span></a></li>
     </ol>
   </nav>
 
@@ -333,8 +335,8 @@
         <span><b>SQLite</b> storage</span>
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
-        <span><b>~2,300</b> lines total</span>
-        <span><b>v1.1.0</b> shipped</span>
+        <span><b>~2,600</b> lines total</span>
+        <span><b>v1.2.0</b> shipped</span>
       </div>
     </header>
 
@@ -1538,21 +1540,89 @@ python -m PyInstaller backend.spec --noconfirm \
     <!-- ============================================ PART 9 -->
     <section class="part" id="p9">
       <p class="part-num">Part 09</p>
-      <h2>Shipping the next change</h2>
+      <h2>Keeping track of changes</h2>
       <p class="part-intro">
-        Version 1.0.0 is not the end of the work. It is the first point from
-        which changes have to be described to somebody.
+        Two people need to know what changed — whoever uses your app, and you.
+        They need completely different answers.
       </p>
 
       <p>
-        Once something is installed on another machine, you lose the ability to
-        just fix things. Users have a copy; they need to know whether the new one
-        matters, whether it will break what they rely on, and whether it is worth
-        the interruption. A version number is how that gets communicated, and it
-        is a promise rather than a counter.
+        Before reading on, try to answer four questions about the project as it
+        now stands. They are not rhetorical; attempt them.
+      </p>
+      <ol>
+        <li>The scrollbar behaves differently than it did earlier. What exactly
+            changed, and in which file?</li>
+        <li>The first-run import worked, then broke, then was fixed twice. What
+            did the version that worked look like?</li>
+        <li>You want to undo the tray menu changes but keep the scrollbar work.
+            How?</li>
+        <li>A stale <code>-wal</code> file gets deleted before a database is
+            copied. Six months from now, why?</li>
+      </ol>
+      <p>
+        If your honest answer to any of them is "I would have to remember", or
+        "I'd look for a folder called <code>main_old.js</code>", then you have
+        just found the problem this part is about — and you found it the way
+        almost everyone does, which is slightly too late to be comfortable.
+      </p>
+      <p>
+        Everything described in this document up to here was built with no record
+        of its own construction. Each edit overwrote the one before it. The
+        application works, and the sequence that produced it is simply gone.
+        There is no way to see the state before any given change, and no way back
+        to it.
       </p>
 
-      <h3>What the three numbers mean</h3>
+      <div class="aside note-bad">
+        <span class="tag">What that costs, concretely</span>
+        <p>
+          Both bugs in Part 08 were introduced by edits made while fixing
+          something else. Finding them meant re-reading the current code and
+          reasoning forwards. With a record of changes, "what did I touch between
+          the version that worked and this one?" is one command, and the answer
+          is usually sitting in the output.
+        </p>
+        <p>
+          A third bug in this project was a CSS comment accidentally left
+          unclosed, which the browser's error recovery hid. A diff would have
+          shown it as five stray lines the instant it was made.
+        </p>
+      </div>
+
+      <p>
+        So there are two tracking problems here, and confusing them is common:
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th></th><th>For whoever uses it</th><th>For you</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>The question</strong></td>
+              <td>"Should I install this one?"</td>
+              <td>"What changed, and how do I get back?"</td>
+            </tr>
+            <tr>
+              <td><strong>The answer</strong></td>
+              <td>A version number</td>
+              <td>Version control — in practice, git</td>
+            </tr>
+            <tr>
+              <td><strong>How often</strong></td>
+              <td>A few releases a year</td>
+              <td>Every change worth naming</td>
+            </tr>
+            <tr>
+              <td><strong>They see</strong></td>
+              <td><code>1.1.0</code> → <code>1.2.0</code></td>
+              <td>Every intermediate state, forever</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>For whoever uses it: what the three numbers mean</h3>
       <p>
         The widely used convention is <strong>semantic versioning</strong>:
         <code>MAJOR.MINOR.PATCH</code>.
@@ -1574,7 +1644,7 @@ python -m PyInstaller backend.spec --noconfirm \
               <td><strong>MINOR</strong><br>1.0.0 → 1.1.0</td>
               <td>New capability, everything old still behaves the same</td>
               <td>"Safe; there is new stuff"</td>
-              <td>This release: the embedded guide, clearer tray actions, the overlay scrollbar</td>
+              <td>1.2.0: importing a database at any time, without losing what is there</td>
             </tr>
             <tr>
               <td><strong>PATCH</strong><br>1.1.0 → 1.1.1</td>
@@ -1587,12 +1657,14 @@ python -m PyInstaller backend.spec --noconfirm \
       </div>
 
       <p>
-        The changes in this release added things — a guide window, two named tray
-        commands instead of one ambiguous one, a scrollbar that behaves like an
-        app's — and removed nothing. Existing databases keep working untouched.
-        That is the definition of a minor bump, so <code>1.0.0</code> became
-        <code>1.1.0</code> in <code>package.json</code>, which is where the
-        packager reads it from and where the app itself reports it in the tray.
+        Two consecutive releases here were both minor bumps, for the same reason.
+        <code>1.1.0</code> added an embedded guide, two named tray commands in
+        place of one ambiguous one, and an overlay scrollbar. <code>1.2.0</code>
+        added the ability to import a database at any time. Both added
+        capability; neither changed how anything existing behaves, and existing
+        databases keep working untouched. The number lives in
+        <code>package.json</code>, which is where the packager reads it and where
+        the app reports it in its own tray menu.
       </p>
 
       <div class="aside">
@@ -1669,41 +1741,382 @@ python -m PyInstaller backend.spec --noconfirm \
         of running the app, rather than a step you remember.
       </p>
 
-      <h3>Version numbers are not version control</h3>
+      <h3>For yourself: version control</h3>
       <p>
-        These are two different things and it is worth being precise. A version
-        <em>number</em> describes a release to your users. Version <em>control</em>
-        — in practice, <strong>git</strong> — records every intermediate state to
-        you, the author.
+        Git is the near-universal answer, and the mental model is simpler than
+        its reputation. Git stores <strong>snapshots</strong> of your whole
+        project. You decide when one is taken, and you attach a message saying
+        why. Afterwards you can read any snapshot, compare two of them, or return
+        to one exactly.
+      </p>
+      <p>Three commands do almost all of the work:</p>
+      <pre><code>git init                      # start recording — once, per project
+git add -A                    # stage everything that changed
+git commit -m "why this change exists"</code></pre>
+      <p>And two that pay it back:</p>
+      <pre><code>git log --oneline             # the sequence of snapshots
+git diff                      # exactly what changed, line by line</code></pre>
+      <p>
+        The message is the part beginners skip and experienced people guard. The
+        diff already shows <em>what</em> changed; only the message can say what it
+        was for. "Fixed stuff" throws that away. Compare it with the actual
+        message attached to the import feature in this project, which records
+        that Windows keeps a file handle open after the process is killed —
+        knowledge that is invisible in the code and expensive to rediscover.
+      </p>
+
+      <h4>What must never go in</h4>
+      <p>
+        A repository keeps everything forever, and that cuts both ways. Deleting
+        a file in a later snapshot does <em>not</em> remove it from the history;
+        anyone who clones the project still gets every version of it. So the
+        decision about what to record has to be made before the first commit,
+        not after.
       </p>
       <p>
-        Git gives you three things that are hard to live without once you have
-        had them: an answer to "what did I change since it last worked", the
-        ability to return to any earlier state exactly, and a message attached to
-        each change explaining why it was made. That third one is the one people
-        underrate; six months later the diff shows what changed, and only the
-        message says what for.
+        This project excludes three categories, listed in a file called
+        <code>.gitignore</code>:
       </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Excluded</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>portfolio.db</code></td>
+              <td>Real positions, share counts, and cost basis. Personal financial data.</td>
+            </tr>
+            <tr>
+              <td><code>build/</code>, <code>node_modules/</code>, <code>.venv/</code></td>
+              <td>About 1.3 GB, and every byte of it regenerable from what <em>is</em> tracked.</td>
+            </tr>
+            <tr>
+              <td><code>.env</code></td>
+              <td>Machine-specific settings. <code>.env.example</code> documents the options instead.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div class="aside note-bad">
-        <span class="tag">Worth being honest about</span>
+        <span class="tag">This one is not hypothetical</span>
         <p>
-          This project is <em>not</em> under version control. Everything described
-          here was built without it, which is why the reasoning lives in unusually
-          detailed code comments — they are doing a job commit messages would
-          normally do.
+          <code>portfolio.db</code> holds someone's actual holdings. Committing it
+          once to a public repository publishes their finances permanently — and
+          because history is preserved, removing it afterwards does not undo that.
+          The only reliable fix is rewriting history and treating the data as
+          compromised.
         </p>
         <p>
-          That works, but it does not give you the other two things. There is no
-          way to see what changed between the version that worked and the one that
-          does not, and no way back. <code>git init</code> costs one command; the
-          moment you wish you had it is the moment it is already too late.
+          Write the <code>.gitignore</code> first, then run <code>git status</code>
+          and <em>read the list</em> before your first commit. It takes ten
+          seconds and it is the only moment when this is cheap.
         </p>
       </div>
+
+      <h4>What a commit should contain</h4>
+      <p>
+        One idea. The import feature and the guide rewrite are two commits, not
+        one, because they are two things a future reader might want to understand
+        or undo separately. A commit spanning four unrelated changes cannot be
+        reverted without taking the other three with it.
+      </p>
+      <p>
+        This is also why the project's first commit is unusually apologetic: it
+        contains the entire application, because there was no history to preserve.
+        Every commit after it is a single change with a reason attached. Starting
+        on day one costs one command; starting at v1.1.0 means the first snapshot
+        is just "everything, somehow".
+      </p>
     </section>
 
     <!-- ============================================ PART 10 -->
     <section class="part" id="p10">
       <p class="part-num">Part 10</p>
+      <h2>Getting it to other people</h2>
+      <p class="part-intro">
+        A public repository serves two audiences who want completely different
+        things from it. Most confusion about "publishing an app" is really
+        confusion about which audience you are talking to.
+      </p>
+
+      <p>
+        Someone arriving at your project is either a <strong>developer</strong>,
+        who wants the source so they can read, change, or build it, or a
+        <strong>user</strong>, who wants the finished program and does not care
+        that it is written in Python. Serving one well and the other badly is the
+        usual failure.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th></th><th>Developer</th><th>User</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Wants</strong></td><td>The source</td><td>One file that installs</td></tr>
+            <tr><td><strong>Gets it from</strong></td><td><code>git clone</code></td><td>The Releases page</td></tr>
+            <tr><td><strong>Needs installed</strong></td><td>Python, Node, the build tools</td><td>Nothing</td></tr>
+            <tr><td><strong>Then does</strong></td><td>Freeze the backend, package the app</td><td>Double-clicks the installer</td></tr>
+            <tr><td><strong>Time</strong></td><td>Twenty minutes and a toolchain</td><td>A minute</td></tr>
+            <tr><td><strong>Downloads</strong></td><td>1.4 MB of source</td><td>110 MB installer</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure>
+        <div class="figwrap">
+          <svg viewBox="0 0 900 330" role="img" aria-label="A repository serves two audiences: developers clone the source and build it themselves using a toolchain, while users download a single prebuilt installer from the Releases page. The maintainer builds the installer from a tagged commit and uploads it to the release; the binary is never stored in git history.">
+            <defs>
+              <marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 10,5 0,9" fill="currentColor"/>
+              </marker>
+              <marker id="ar5g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 10,5 0,9" class="f-gold"/>
+              </marker>
+            </defs>
+
+            <rect x="46" y="34" width="310" height="86" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <text x="201" y="62" text-anchor="middle" font-family="monospace" font-size="13" font-weight="600" fill="currentColor">the repository</text>
+            <text x="201" y="82" text-anchor="middle" font-family="monospace" font-size="11" fill="currentColor" opacity=".65">source, docs, build recipes</text>
+            <text x="201" y="102" text-anchor="middle" font-family="monospace" font-size="11" fill="currentColor" opacity=".65">1.4 MB · every version kept</text>
+
+            <rect x="544" y="34" width="310" height="86" rx="4" fill="none" class="s-gold" stroke-width="1.9"/>
+            <text x="699" y="62" text-anchor="middle" font-family="monospace" font-size="13" font-weight="600" class="f-gold">the Releases page</text>
+            <text x="699" y="82" text-anchor="middle" font-family="monospace" font-size="11" class="f-gold" opacity=".8">Setup 1.2.0.exe</text>
+            <text x="699" y="102" text-anchor="middle" font-family="monospace" font-size="11" class="f-gold" opacity=".8">110 MB · outside git history</text>
+
+            <line x1="356" y1="70" x2="538" y2="70" class="s-gold" stroke-width="1.6" marker-end="url(#ar5g)"/>
+            <text x="447" y="60" text-anchor="middle" font-family="monospace" font-size="11" class="f-gold">tag → build → upload</text>
+            <text x="447" y="92" text-anchor="middle" font-family="monospace" font-size="10.5" fill="currentColor" opacity=".55">you do this, once per release</text>
+
+            <rect x="46" y="228" width="310" height="74" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="201" y="256" text-anchor="middle" font-family="monospace" font-size="13" font-weight="600" fill="currentColor">a developer</text>
+            <text x="201" y="277" text-anchor="middle" font-family="monospace" font-size="11" fill="currentColor" opacity=".65">has Python + Node, wants to read it</text>
+
+            <rect x="544" y="228" width="310" height="74" rx="4" fill="none" class="s-teal" stroke-width="1.7"/>
+            <text x="699" y="256" text-anchor="middle" font-family="monospace" font-size="13" font-weight="600" class="f-teal">a user</text>
+            <text x="699" y="277" text-anchor="middle" font-family="monospace" font-size="11" class="f-teal" opacity=".85">has nothing installed, wants the app</text>
+
+            <line x1="201" y1="224" x2="201" y2="126" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar5)"/>
+            <text x="212" y="180" font-family="monospace" font-size="11" fill="currentColor" opacity=".8">git clone, then build</text>
+
+            <line x1="699" y1="224" x2="699" y2="126" class="s-teal" stroke-width="1.5" marker-end="url(#ar5)"/>
+            <text x="710" y="180" font-family="monospace" font-size="11" class="f-teal">download one file</text>
+          </svg>
+        </div>
+        <figcaption>
+          The installer is built from the repository but does not live in it. Git
+          keeps every version of every tracked file forever, so a 110 MB binary
+          committed once makes the project 110 MB heavier for everyone who ever
+          clones it — including the developer who only wanted to read the source.
+        </figcaption>
+      </figure>
+
+      <h3>Tags: naming the commit a release was built from</h3>
+      <p>
+        A <strong>tag</strong> is a permanent label on one snapshot. Versions move
+        forwards; a tag stays put. When a user reports a bug in 1.2.0, the tag is
+        what lets you look at exactly the code they are running, months later,
+        after everything has moved on.
+      </p>
+      <pre><code>git tag -a v1.2.0 -m "Import at any time; git and distribution docs"
+git push origin v1.2.0</code></pre>
+      <p>
+        The convention is a <code>v</code> prefix on the version number, and the
+        tag should point at the commit you actually built the installer from — not
+        one made afterwards.
+      </p>
+
+      <h3>What a GitHub Release actually is</h3>
+      <p>
+        Three things stapled together: a tag, some notes written for humans, and
+        one or more attached files. The attachments are stored separately from the
+        repository, which is exactly why binaries belong there.
+      </p>
+      <p>
+        The whole publishing sequence, end to end:
+      </p>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Commit the change</h3>
+            <p>With a message explaining why it exists.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Bump the version and rebuild</h3>
+            <p>Re-freeze the backend if any Python changed, then rebuild the installer.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Test the packaged build</h3>
+            <p>Not the dev one — see Part 08.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Tag and push</h3>
+            <pre><code>git push origin main
+git push origin v1.2.0</code></pre>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Create the Release and attach the installer</h3>
+            <p>
+              On the web, or in one command if you have the GitHub CLI:
+            </p>
+            <pre><code>gh release create v1.2.0 \
+  "build/desktop-dist/Horizon Holdings Setup 1.2.0.exe" \
+  --title "v1.2.0" --notes-file RELEASE_NOTES.md</code></pre>
+          </div>
+        </li>
+      </ol>
+
+      <div class="aside note-bad">
+        <span class="tag">Tell users what they will see</span>
+        <p>
+          An unsigned installer is not a neutral experience. Windows shows a
+          SmartScreen warning users must click past, and if Smart App Control is
+          enforced it refuses to run the app at all. macOS refuses outright
+          without a paid certificate.
+        </p>
+        <p>
+          None of that is a defect, but a user who is not warned assumes your app
+          is malware. Say it plainly in the README, and say what to do about it.
+        </p>
+      </div>
+
+      <h3>The README is the front door</h3>
+      <p>
+        It is the first and often only thing anyone reads. It has to serve both
+        audiences within the first screen: a link to the Releases page for users,
+        and build instructions for developers. If a visitor cannot tell within
+        fifteen seconds which of those they are, the README has failed.
+      </p>
+    </section>
+
+    <!-- ============================================ PART 11 -->
+    <section class="part" id="p11">
+      <p class="part-num">Part 11</p>
+      <h2>Building with an AI assistant</h2>
+      <p class="part-intro">
+        This application was built with one. That is worth being specific about,
+        because the useful lessons are not the ones in the marketing.
+      </p>
+
+      <p>
+        Most of the code here was written by an AI assistant working from
+        instructions, running commands, reading the output, and fixing what it
+        found. The interesting question is not whether that works — it plainly
+        does — but <em>where</em> it works and where it does not.
+      </p>
+
+      <h3>Where it genuinely helped</h3>
+      <ul>
+        <li>
+          <strong>Problems with known shapes.</strong> Supervising a child process,
+          picking a free port, polling for readiness, a PyInstaller spec, a
+          <code>.gitignore</code>. These are solved problems with well-known
+          traps, and recalling all of them at once is exactly the shape of task
+          this is good at.
+        </li>
+        <li>
+          <strong>Actually running things.</strong> The single most valuable thing
+          it did was run the packaged build and read the result. Two real bugs
+          surfaced that way — neither was found by reading code, including by the
+          model that wrote the code.
+        </li>
+        <li>
+          <strong>The tedious-but-important.</strong> This document, the code
+          comments explaining <em>why</em>, the commit messages. Work that is
+          genuinely valuable, genuinely boring, and therefore usually skipped.
+        </li>
+      </ul>
+
+      <h3>Where it failed, in this project</h3>
+      <p>
+        Three bugs reached a built artifact. All three were written by the
+        assistant, and it is worth looking at what they have in common.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Bug</th><th>Why it slipped through</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Migration silently doing nothing once packaged</td>
+              <td>The code was correct in the environment it was tested in. The
+                  failure only exists in a different one.</td>
+            </tr>
+            <tr>
+              <td>Dismissing a dialog choosing the destructive option</td>
+              <td>Every line was individually reasonable. The bug was in the
+                  interaction between a default and human behaviour.</td>
+            </tr>
+            <tr>
+              <td>A CSS comment left unclosed by an edit</td>
+              <td>A careless edit to surrounding text, hidden by the browser's
+                  error recovery.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The pattern: AI-written code fails in the same places human-written code
+        fails — at boundaries between environments, at defaults, and in the gap
+        between "looks right" and "was run". What it does not do is fail
+        <em>obviously</em>. The code reads well, the comments are confident, and
+        the reasoning is plausible. None of that is evidence it works.
+      </p>
+
+      <div class="aside note-good">
+        <span class="tag">The habit that actually helps</span>
+        <p>
+          Ask for verification, not just code. "Write the import feature" produces
+          something plausible. "Write it, then run the packaged build with an
+          empty data directory and show me what happened" produces something
+          tested. The second is barely more effort and a different category of
+          result.
+        </p>
+      </div>
+
+      <h3>What stayed human</h3>
+      <p>
+        Every decision that shaped the project came from the person, not the
+        assistant: that it should be an Electron app at all, that the Python
+        backend should be frozen rather than rewritten in JavaScript, that closing
+        the window should keep the scheduler running, that the tray needed to say
+        which of two pipelines it was fetching. The assistant had opinions and
+        argued for some of them. It did not get to choose.
+      </p>
+      <p>
+        This matters more than it sounds. Those decisions encode what the thing is
+        <em>for</em> — a NAV series that must stay unbroken for decades, on one
+        person's laptop, without a subscription. An assistant can weigh a tradeoff
+        once you state the goal. It cannot tell you what the goal should be.
+      </p>
+
+      <h3>Why this makes Part 09 more important, not less</h3>
+      <p>
+        Working this way, changes arrive faster and in larger pieces than when
+        typing every line yourself. Four files can change in a minute. That is
+        precisely the situation in which "what changed since it last worked?"
+        becomes both harder to answer from memory and more valuable to answer.
+      </p>
+      <p>
+        The version control this project spent nine parts not having is not
+        optional overhead when an assistant is involved. It is the mechanism by
+        which you stay the one in charge of a codebase that is growing faster than
+        you can read it.
+      </p>
+    </section>
+
+    <!-- ============================================ PART 12 -->
+    <section class="part" id="p12">
+      <p class="part-num">Part 12</p>
       <h2>What transfers</h2>
       <p class="part-intro">
         The parts of this that are not about portfolios, Python, or Electron.
@@ -1767,7 +2180,7 @@ python -m PyInstaller backend.spec --noconfirm \
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.1.0 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.2.0 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.
