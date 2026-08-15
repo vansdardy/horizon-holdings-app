@@ -571,6 +571,12 @@ python server.py            # → http://127.0.0.1:8000</pre>
       <button class="run-btn" id="saveBtn">保存持仓</button>
       <button class="run-btn ghost" id="exportBtn">导出 JSON</button>
       <a class="run-btn ghost" id="backupBtn" href="#" style="text-decoration:none;display:inline-block;">备份数据库</a>
+      <!-- Desktop app only: needs a native file dialog and a backend restart,
+           neither of which a browser tab can do. Hidden unless window.desktop
+           exists, which is how the page detects it is running inside Electron. -->
+      <button class="run-btn ghost" id="importDbBtn" style="display:none;"
+              title="从文件导入 portfolio.db —— 会先自动备份当前数据">导入数据库…</button>
+      <span id="desktopVersion" style="display:none;font-family:var(--mono);font-size:10.5px;color:var(--text-faint);align-self:center;"></span>
       <label><input type="checkbox" id="onlyHeld"> 只看已持有</label>
       <label><input type="checkbox" id="useCashGap"> 差额计入现金</label>
       <select id="posCountryFilter" style="background:var(--bg-raised);border:1px solid #3A4657;color:#F5F1E6;font-family:var(--mono);font-size:12px;padding:5px 8px;">
@@ -1556,6 +1562,35 @@ async function boot(){
   // for a root-relative path to resolve against.
   const gl = document.getElementById('guideLink');
   if(gl) gl.href = API + '/guide';
+
+  // Desktop-only controls. `window.desktop` is injected by the Electron preload
+  // and is undefined in a plain browser, which is exactly the test we want:
+  // importing needs a native file dialog and a backend restart, so in a browser
+  // the button would be a promise the page cannot keep. It stays hidden there.
+  if(window.desktop){
+    const ib = document.getElementById('importDbBtn');
+    if(ib){
+      ib.style.display = '';
+      ib.addEventListener('click', async () => {
+        ib.disabled = true;
+        try{
+          // On success the main process reloads this window, so there is
+          // nothing to update here. On cancel, nothing happened at all.
+          await window.desktop.importDatabase();
+        }catch(e){
+          alert('导入失败 / Import failed: ' + (e && e.message ? e.message : e));
+        }finally{
+          ib.disabled = false;
+        }
+      });
+    }
+    const vs = document.getElementById('desktopVersion');
+    if(vs){
+      window.desktop.version()
+        .then(v => { vs.textContent = 'v' + v; vs.style.display = ''; })
+        .catch(() => {});
+    }
+  }
 
   const s = await loadStatus();
   if(s){ await loadNav(); await loadPositions(); await loadTickerPrices(); }

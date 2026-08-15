@@ -115,6 +115,14 @@ desktop/main.js Electron shell: supervises the backend process, tray, window.
 
 ### The desktop layer
 
+**`desktop/preload.js` is the only bridge between the page and Electron**, and it exposes
+exactly two named functions via `contextBridge` (`db:import`, `app:version`). Never expose
+`ipcRenderer` itself — that hands the page every registered handler. The page uses
+`window.desktop` being defined as its "am I in Electron?" test, so browser-only mode hides
+the controls it cannot support. **Anything added to `desktop/` must also be added to the
+`files` array in `desktop/package.json`**, or it works in dev and silently vanishes from the
+installed app.
+
 `desktop/main.js` holds no application logic — it supervises. Three things there are not
 optional: a single-instance lock (two copies means two schedulers fetching the same day into
 the same database), `taskkill /T /F` on quit (Windows does not reap a dead parent's children,

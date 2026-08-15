@@ -9,6 +9,30 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.3.0
+
+**Added**
+
+- **"Import database…" button in the window itself**, next to Save / Export /
+  Backup. It already existed in the tray menu, which turned out to be the same
+  as not existing: the person who asked for the feature went looking for it in
+  the app, did not find it, and assumed it had never been built.
+
+  A page cannot open a native file dialog or restart a process, so this needed
+  a preload bridge (`desktop/preload.js`) exposing exactly two named functions
+  over `contextBridge` — never `ipcRenderer` itself. The button is hidden when
+  `window.desktop` is undefined, which is also how the page detects it is
+  running in the desktop app rather than a browser.
+- The app version now appears in the window, not only the tray.
+
+**Fixed**
+
+- `preload.js` was missing from electron-builder's `files` list. It would have
+  worked in development and silently vanished from the installed app, taking
+  the new button with it and reporting nothing.
+
+---
+
 ## v1.2.1
 
 No functional change. The build guide ships inside the application, so

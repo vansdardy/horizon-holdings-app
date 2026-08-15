@@ -15,7 +15,7 @@
  *      gets replaced wholesale on update.
  */
 
-const { app, BrowserWindow, Tray, Menu, dialog, shell, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, shell, nativeImage, Notification, ipcMain } = require('electron');
 const { spawn, execFile } = require('child_process');
 const http = require('http');
 const net = require('net');
@@ -213,7 +213,7 @@ async function importDatabaseNow(userData) {
     properties: ['openFile'],
     filters: [{ name: 'SQLite database', extensions: ['db'] }],
   });
-  if (picked.canceled || !picked.filePaths.length) return;
+  if (picked.canceled || !picked.filePaths.length) return false;
   const source = picked.filePaths[0];
 
   // Every SQLite file begins with this exact string. Checking it costs nothing
@@ -234,7 +234,7 @@ async function importDatabaseNow(userData) {
       '这不是一个 SQLite 数据库 / Not a SQLite database',
       `${source}\n\n文件头不匹配,已取消 —— 当前数据未被改动。\n`
       + 'The file header does not match. Cancelled; nothing was changed.');
-    return;
+    return false;
   }
 
   const target = path.join(userData, 'portfolio.db');
@@ -255,7 +255,7 @@ async function importDatabaseNow(userData) {
   });
   if (response !== 0) {
     log('import cancelled at the confirmation step');
-    return;
+    return false;
   }
 
   try {
@@ -277,12 +277,14 @@ async function importDatabaseNow(userData) {
     }
     notify('数据库已导入 / Database imported',
            `原数据已备份 / Previous data saved as:\n${path.basename(backup)}`);
+    return true;
   } catch (err) {
     isRestarting = false;
     log(`import failed: ${err.message}`);
     dialog.showErrorBox(
       '导入失败 / Import failed',
       `${err.message}\n\n原数据备份在 / Your previous data is at:\n${backup}`);
+    return false;
   }
 }
 
@@ -479,9 +481,15 @@ function createWindow(show) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      // No preload: the page is an ordinary web page that talks to the local
-      // HTTP API. Giving the renderer any bridge into Node would be strictly
-      // more attack surface for zero functionality.
+      // This started with no preload at all, on the reasoning that the page is
+      // an ordinary web page talking to a local HTTP API, so any bridge into
+      // Node would be attack surface bought for nothing. That held until the
+      // page needed to offer "Import database", which requires a native file
+      // dialog and a backend restart — things HTTP cannot reach.
+      //
+      // The tradeoff changed, so the decision did. The bridge exposes two named
+      // functions and nothing else; see preload.js for why that stays safe.
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
@@ -617,6 +625,18 @@ if (!app.requestSingleInstanceLock()) {
 
     // --hidden is passed by the launch-at-login entry so a boot goes straight
     // to the tray instead of throwing a window in the user's face.
+    // The two channels preload.js exposes, and the only ones that exist. Both
+    // are registered after userData is known, because the import needs it.
+    ipcMain.handle('db:import', () => importDatabaseNow(userData));
+    ipcMain.handle('app:version', () => {
+      // The page requests this on load, so seeing it in the log is proof the
+      // preload bridge actually loaded. If preload.js goes missing from the
+      // build, this line stops appearing and the Import button silently never
+      // renders — worth being able to check without opening devtools.
+      log('renderer reached the preload bridge');
+      return app.getVersion();
+    });
+
     const startHidden = process.argv.includes('--hidden');
     buildTray(userData);
     createWindow(!startHidden);

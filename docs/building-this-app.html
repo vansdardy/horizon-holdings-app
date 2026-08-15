@@ -336,7 +336,7 @@
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
         <span><b>~2,600</b> lines total</span>
-        <span><b>v1.2.1</b> shipped</span>
+        <span><b>v1.3.0</b> shipped</span>
       </div>
     </header>
 
@@ -1126,6 +1126,88 @@ def _default_data_dir():
         so the old workflow is bit-for-bit unaffected. When adding a mode, make the
         existing mode the untouched path.
       </p>
+
+      <h3>Problem 6 · When the page needs to do something a page cannot do</h3>
+      <p>
+        The five problems above are all about supervision. This one is about the
+        boundary itself, and it arrived the way real requirements usually do —
+        from someone using the thing.
+      </p>
+      <p>
+        Importing a database was originally only available from the tray menu.
+        That is a defensible place for it, and it was still wrong, because the
+        person who asked for the feature later went looking for it in the window,
+        did not find it, and concluded it had never been built. <strong>A feature
+        nobody can find has the same value as a feature that does not
+        exist.</strong>
+      </p>
+      <p>
+        So it needed a button in the page. Which runs straight into the
+        architecture: the page is a Chromium tab. It cannot open a native file
+        dialog, cannot stop and restart a process, and cannot read arbitrary
+        paths. Not because Electron forgot, but because a renderer having those
+        powers is precisely what makes a compromised page catastrophic instead of
+        annoying.
+      </p>
+      <p>
+        The sanctioned route is a <strong>preload script</strong>: a small file
+        that runs in the renderer with access to Electron's APIs, before the page
+        loads, and hands the page an explicitly chosen set of functions.
+      </p>
+      <pre><code>// preload.js — runs in the renderer, but privileged
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('desktop', {
+  importDatabase: () =&gt; ipcRenderer.invoke('db:import'),
+  version:        () =&gt; ipcRenderer.invoke('app:version'),
+});</code></pre>
+      <pre><code>// main.js — the privileged side actually doing the work
+ipcMain.handle('db:import',   () =&gt; importDatabaseNow(userData));
+ipcMain.handle('app:version', () =&gt; app.getVersion());</code></pre>
+      <pre><code>// the page — no Node, no filesystem, just the two functions
+if (window.desktop) {
+  importBtn.style.display = '';
+  importBtn.onclick = () =&gt; window.desktop.importDatabase();
+}</code></pre>
+
+      <p>Three details in there matter more than they look:</p>
+      <ul>
+        <li>
+          <strong>Expose named functions, never <code>ipcRenderer</code> itself.</strong>
+          Handing the page the raw channel object lets it invoke every handler the
+          main process has. This is the single most common way the pattern is
+          undone, and it undoes it completely.
+        </li>
+        <li>
+          <strong>The privileged action still confirms with the user.</strong>
+          The import shows a file picker and a warning dialog. Even a fully
+          compromised page achieves nothing worse than a dialog somebody has to
+          agree to.
+        </li>
+        <li>
+          <strong><code>window.desktop</code> is also feature detection.</strong> In
+          an ordinary browser it is undefined, so the button stays hidden rather
+          than appearing and failing. The same file is served both ways, and each
+          gets a coherent interface.
+        </li>
+      </ul>
+
+      <div class="aside note-bad">
+        <span class="tag">The trap this immediately walked into</span>
+        <p>
+          <code>electron-builder</code> only packages the files listed in
+          <code>package.json</code>'s <code>files</code> array. Adding
+          <code>preload.js</code> to the project does not add it to the build.
+        </p>
+        <p>
+          In development the preload loads from disk and everything works. In the
+          installed app the file is absent, <code>window.desktop</code> is
+          undefined, and the button silently never appears — the feature is gone,
+          with no error anywhere. Another entry in the "works in dev, broken when
+          packaged" family from Part 08, found the same way: by checking the list
+          rather than trusting it.
+        </p>
+      </div>
 
       <h3>Turning Python into an executable</h3>
       <p>
@@ -2496,7 +2578,7 @@ git push origin v1.2.0</code></pre>
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.2.1 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.3.0 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.
