@@ -351,7 +351,8 @@ def api_universe():
         "initial_nav_base": u.INITIAL_NAV_BASE,
         "holdings": [
             {"ticker": t, "target_weight": w[t], **{k: v[k] for k in
-             ("name", "yahoo", "country", "exchange", "ccy", "sector", "industry", "moat", "score")}}
+             ("name", "yahoo", "country", "exchange", "ccy", "sector", "industry", "moat", "score",
+              "name_en", "industry_en", "moat_en", "country_en", "exchange_en")}}
             for t, v in u.UNIVERSE.items()
         ],
     }
@@ -455,6 +456,7 @@ def api_positions():
 
         rows.append({
             "ticker": t, "name": meta["name"], "ccy": ccy, "country": meta["country"],
+            "name_en": meta["name_en"], "country_en": meta["country_en"],
             "sector": meta["sector"], "target_weight": weights[t],
             "shares": shares, "avg_cost": avg_cost, "price": px,
             "price_date": px_rec["date"] if px_rec else None,

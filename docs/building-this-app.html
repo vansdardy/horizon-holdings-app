@@ -318,8 +318,9 @@
       <li><a href="#p12"><span class="n">12</span><span>Getting it to other people</span></a></li>
       <li><a href="#p13"><span class="n">13</span><span>Building with an AI assistant</span></a></li>
       <li><a href="#p14"><span class="n">14</span><span>Building something else</span></a></li>
-      <li><a href="#p15"><span class="n">15</span><span>When you get stuck</span></a></li>
-      <li><a href="#p16"><span class="n">16</span><span>What transfers</span></a></li>
+      <li><a href="#p15"><span class="n">15</span><span>Reading the source</span></a></li>
+      <li><a href="#p16"><span class="n">16</span><span>When you get stuck</span></a></li>
+      <li><a href="#p17"><span class="n">17</span><span>What transfers</span></a></li>
     </ol>
   </nav>
 
@@ -340,7 +341,7 @@
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
         <span><b>~3,400</b> lines total</span>
-        <span><b>v1.5.1</b> shipped</span>
+        <span><b>v1.6.0</b> shipped</span>
       </div>
     </header>
 
@@ -3292,6 +3293,181 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
     <!-- ============================================ PART 15 -->
     <section class="part" id="p15">
       <p class="part-num">Part 15</p>
+      <h2>Reading the source</h2>
+      <p class="part-intro">
+        Reading code is a separate skill from writing it, it is the one you will
+        use far more often, and almost nobody is taught it.
+      </p>
+
+      <p>
+        Everything in this document is a description. The code is the thing
+        itself, and at some point you have to open it. The instinct is to start
+        at line 1 of the largest file and read downwards, which is roughly like
+        learning a city by reading the phone book: technically complete, and it
+        teaches you nothing about how anyone gets to work.
+      </p>
+
+      <h3>Four moves that work on any codebase</h3>
+      <ol>
+        <li>
+          <strong>Find the entry point.</strong> Something starts first. Look for
+          <code>main</code>, an <code>if __name__ == "__main__"</code>, the
+          <code>"main"</code> field in a <code>package.json</code>, or whatever
+          the run command names. Everything else is reached from there.
+        </li>
+        <li>
+          <strong>Read the data before the logic.</strong> Find the database
+          schema, the type definitions, the shape of the JSON. Code that
+          manipulates a structure you understand is far easier than the reverse,
+          and data structures change less often than the code around them.
+        </li>
+        <li>
+          <strong>Follow exactly one thread, all the way through.</strong> Pick
+          the single most important thing the program does and trace it from the
+          click to the disk. Ignore everything you pass on the way. You will feel
+          like you are missing things; you are, and that is what makes it work.
+        </li>
+        <li>
+          <strong>Let the tools do the navigating.</strong> Search for a string
+          you saw on screen to find the code that produced it. That one trick
+          answers "where does this come from?" faster than any amount of
+          scrolling.
+        </li>
+      </ol>
+
+      <div class="aside note-good">
+        <span class="tag">The comments here are a deliberate resource</span>
+        <p>
+          This project's comments explain <em>why</em>, and frequently name the
+          bug that motivated a decision. When you find one, it is telling you
+          about a mistake that already happened — reading them in order is close
+          to reading a list of everything that went wrong during the build.
+        </p>
+      </div>
+
+      <h3>A reading order for this codebase</h3>
+      <p>Roughly ninety minutes, in this order, and skip nothing on the way in.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>#</th><th>File</th><th>Why here</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td><code>db.py</code> — the schema at the top only</td><td>The shape of everything. Note what the primary keys forbid</td></tr>
+            <tr><td>2</td><td><code>universe.py</code></td><td>Small, and it is the data the whole application is about</td></tr>
+            <tr><td>3</td><td><code>index_engine.py</code></td><td>The actual subject: pure functions, no I/O, ~250 lines</td></tr>
+            <tr><td>4</td><td><code>server.run_daily_update</code></td><td>One function that ties fetching, storing and computing together</td></tr>
+            <tr><td>5</td><td><code>tests/test_index_engine.py</code></td><td>Executable claims about what step 3 is supposed to do</td></tr>
+            <tr><td>6</td><td><code>static/index.html</code> — <code>boot()</code> and one render function</td><td>How the page asks and what it does with the answer</td></tr>
+            <tr><td>7</td><td><code>desktop/main.js</code></td><td>Last. It is scaffolding around everything above</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Note where the tests sit in that list. <strong>A test suite is often the
+        best documentation a project has</strong>, because it cannot go out of
+        date without someone noticing — a stale comment lies quietly, a stale
+        test fails.
+      </p>
+
+      <h3>Experiments — break it on purpose</h3>
+      <p>
+        Reading tells you what code says. Changing it tells you what it does.
+        Each of these takes a couple of minutes, and each makes one idea from
+        this guide concrete. Work on a copy of the database, and
+        <strong>predict the outcome before you run it</strong> — the prediction
+        is the whole exercise, and being wrong is the part that teaches.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Try this</th><th>Watch for</th><th>Which part it proves</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>In <code>universe.py</code>, change one company's <code>score</code> from 6 to 1</td>
+              <td>Its target weight falls and every other weight rises — they always sum to 1</td>
+              <td>03 — normalised weights</td>
+            </tr>
+            <tr>
+              <td>Run with <code>MARKETDATA_MOCK=1</code>, then <code>POST /api/refresh?window=10&amp;day_offset=-5</code></td>
+              <td>Five days of history appear at once</td>
+              <td>02 — a fake clock makes slow behaviour testable</td>
+            </tr>
+            <tr>
+              <td>Delete today's price for one company you hold, then fetch</td>
+              <td>HTTP 409, the ticker named, and <strong>no NAV row written</strong></td>
+              <td>03 — refuse rather than guess</td>
+            </tr>
+            <tr>
+              <td>Set <code>FETCH_HOUR</code> to the current hour and restart</td>
+              <td>The scheduler fires within ten minutes, unprompted</td>
+              <td>03 — the daily job</td>
+            </tr>
+            <tr>
+              <td>Kill the backend process while the desktop app is open</td>
+              <td>The shell notices and says so, rather than showing a blank window</td>
+              <td>05 — supervision</td>
+            </tr>
+            <tr>
+              <td>Remove <code>preload.js</code> from the <code>files</code> list, rebuild, install</td>
+              <td>The Import button silently disappears — and only in the packaged build</td>
+              <td>05, 08 — works in dev, broken when shipped</td>
+            </tr>
+            <tr>
+              <td>Change a number in <code>index_engine._allocate</code>, then run the tests</td>
+              <td>Which test fails, and whether its message tells you why</td>
+              <td>09 — a test that has never failed proves nothing</td>
+            </tr>
+            <tr>
+              <td>Add a key to <code>i18n.js</code> in English only, run the tests</td>
+              <td>A named failure, before anyone sees a blank label</td>
+              <td>09 — mechanical checks for things humans skim past</td>
+            </tr>
+            <tr>
+              <td>Open the app, then open <code>http://127.0.0.1:&lt;port&gt;</code> in a browser</td>
+              <td>The same application, in two windows, sharing one backend</td>
+              <td>01 — the window is just a browser</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="aside note-bad">
+        <span class="tag">The one worth doing slowly</span>
+        <p>
+          The missing-price experiment is the heart of the project. Delete the
+          price, run the fetch, and watch the application refuse to record
+          anything for that day rather than quietly writing a number that is
+          wrong.
+        </p>
+        <p>
+          Then change it: make it value the missing holding at zero instead, and
+          look at the NAV it produces. It will look completely plausible. That is
+          the entire argument for the refusal, and seeing the plausible wrong
+          number yourself is worth more than any paragraph about it.
+        </p>
+      </div>
+
+      <h3>How to know you have actually understood it</h3>
+      <p>
+        Not by finishing the files. By being able to answer questions like these
+        without looking:
+      </p>
+      <ul>
+        <li>If I add a company to the universe, what else has to change? (There are two places, and the guide says why.)</li>
+        <li>Where would a price fetched today be stored, and under what date?</li>
+        <li>What happens if the app is closed for a week?</li>
+        <li>Which file would I edit to change what the tray menu says?</li>
+      </ul>
+      <p>
+        If you can answer those, you can change this program safely, which is the
+        only useful definition of having read it.
+      </p>
+    </section>
+
+    <!-- ============================================ PART 16 -->
+    <section class="part" id="p16">
+      <p class="part-num">Part 16</p>
       <h2>When you get stuck</h2>
       <p class="part-intro">
         You will be stuck for hours at a time. That is not a sign you chose the
@@ -3434,8 +3610,8 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
     </section>
 
     <!-- ============================================ PART 16 -->
-    <section class="part" id="p16">
-      <p class="part-num">Part 16</p>
+    <section class="part" id="p17">
+      <p class="part-num">Part 17</p>
       <h2>What transfers</h2>
       <p class="part-intro">
         The parts of this that are not about portfolios, Python, or Electron.
@@ -3499,7 +3675,7 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.5.1 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.6.0 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.

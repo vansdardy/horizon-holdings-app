@@ -32,4 +32,7 @@ contextBridge.exposeInMainWorld('desktop', {
 
   /** The app version, so a user can report what they are running. */
   version: () => ipcRenderer.invoke('app:version'),
+
+  /** Tell the shell which language the window is showing, so the tray agrees. */
+  setLanguage: (lang) => ipcRenderer.invoke('app:setLanguage', lang),
 });

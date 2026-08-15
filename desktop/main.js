@@ -291,8 +291,7 @@ async function importDatabaseNow(userData) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(`http://127.0.0.1:${backendPort}/`);
     }
-    notify('数据库已导入 / Database imported',
-           `原数据已备份 / Previous data saved as:\n${path.basename(backup)}`);
+    notify(tr('importedTitle'), tr('importedBody', {f: path.basename(backup)}));
     return true;
   } catch (err) {
     isRestarting = false;
@@ -394,6 +393,71 @@ function stopBackend() {
   backend = null;
 }
 
+// --------------------------------------------------------------- language
+// A small table rather than a shared module: the shell needs eleven strings and
+// cannot import the page's dictionary, which is a browser file. Duplicating
+// eleven strings is cheaper than building a bridge for them.
+//
+// The first-run database prompts are deliberately NOT here and stay bilingual —
+// they appear before anyone has expressed a preference, and getting that dialog
+// wrong loses data.
+const TRAY_STRINGS = {
+  en: {
+    show: 'Show window',
+    updatePrices: 'Update prices && NAV',
+    updatePricesTip: 'Fetch closing prices and exchange rates, recompute NAV (daily)',
+    updateFundamentals: 'Update P/E, dividend yield, beta',
+    updateFundamentalsTip: 'Quarterly; clicking again in the same quarter is skipped',
+    importDb: 'Import database…',
+    howBuilt: 'How this app was built',
+    openData: 'Open data folder',
+    version: 'Version',
+    startAtLogin: 'Start at login',
+    quit: 'Quit',
+    tooltip: 'running in background',
+    stillRunningTitle: 'Still running',
+    stillRunningBody: 'Hidden to the tray — the daily fetch keeps running.\nTo quit for real: right-click the tray icon → Quit.',
+    updated: 'updated', failed: 'could not update', timedOut: 'timed out',
+    labelPrices: 'Prices & NAV', labelFundamentals: 'Fundamentals',
+    priced: 'priced', backfilled: '{n} earlier session(s) backfilled.',
+    alreadyCurrent: 'Already current for {q}; nothing re-fetched.',
+    fundResult: '{n} tickers updated, {f} failed.',
+    importedTitle: 'Database imported', importedBody: 'Previous data saved as:\n{f}',
+  },
+  zh: {
+    show: '打开窗口',
+    updatePrices: '更新行情与净值',
+    updatePricesTip: '抓取收盘价与汇率,重算净值(每日)',
+    updateFundamentals: '更新 P/E、股息率、Beta',
+    updateFundamentalsTip: '每季度一次;同一季度内重复点击会被跳过',
+    importDb: '导入数据库…',
+    howBuilt: '这个应用是怎么做出来的',
+    openData: '打开数据文件夹',
+    version: '版本',
+    startAtLogin: '开机自启',
+    quit: '退出',
+    tooltip: '后台运行中',
+    stillRunningTitle: '仍在后台运行',
+    stillRunningBody: '窗口已收进托盘,每日自动抓取会继续。\n要真正退出:右键托盘图标 → 退出。',
+    updated: '已更新', failed: '未能更新', timedOut: '超时',
+    labelPrices: '行情与净值', labelFundamentals: '基本面',
+    priced: '已定价', backfilled: '另补齐 {n} 个交易日。',
+    alreadyCurrent: '{q} 本季度已是最新,未重复请求。',
+    fundResult: '{n} 支已更新,{f} 支失败。',
+    importedTitle: '数据库已导入', importedBody: '原数据已备份为:\n{f}',
+  },
+};
+
+let uiLang = 'en';
+
+/** Shell-side translator, mirroring the page's t(). */
+function tr(key, vars) {
+  const table = TRAY_STRINGS[uiLang] || TRAY_STRINGS.en;
+  let s = table[key] !== undefined ? table[key] : (TRAY_STRINGS.en[key] || key);
+  if (vars) for (const k in vars) s = s.split('{' + k + '}').join(vars[k]);
+  return s;
+}
+
 // --------------------------------------------------------------- settings
 // One small JSON file for preferences that must survive a restart. Not the
 // database: this is app state, not the user's data, and mixing the two means a
@@ -444,12 +508,7 @@ function writeSettings(userData, patch) {
 function announceStillRunning(userData) {
   if (readSettings(userData).trayNoticeShown) return;
 
-  notify(
-    '仍在后台运行 / Still running',
-    '窗口已收进托盘,每日 18:00 的自动抓取会继续。\n'
-    + '要真正退出:右键托盘图标 → 退出。\n\n'
-    + 'Hidden to the tray — the daily fetch keeps running. '
-    + 'To quit for real: right-click the tray icon → Quit.');
+  notify(tr('stillRunningTitle'), tr('stillRunningBody'));
 
   writeSettings(userData, { trayNoticeShown: true });
   log('told the user the app is still running in the tray (first time only)');
@@ -476,17 +535,15 @@ function notify(title, body) {
 function describeResult(urlPath, d) {
   if (urlPath.startsWith('/api/refresh_fundamentals')) {
     if (d.skipped) {
-      return `${d.quarter} 本季度已是最新,未重复请求。\n`
-           + `Already current for ${d.quarter}; nothing re-fetched.`;
+      return tr('alreadyCurrent', {q: d.quarter});
     }
     const failed = (d.failed || []).length;
-    return `${d.quarter}:${d.fetched} 支已更新,${failed} 支失败。\n`
-         + `${d.fetched} tickers updated, ${failed} failed.`;
+    return `${d.quarter} — ` + tr('fundResult', {n: d.fetched, f: failed});
   }
   const nav = typeof d.nav_per_share === 'number' ? d.nav_per_share.toFixed(2) : '—';
   const back = (d.backfilled_dates || []).length;
-  return `${d.date} · 每份净值 ${nav} ${d.base_ccy} · ${d.n_priced}/78 已定价`
-       + (back ? `\n另补齐 ${back} 个交易日 / ${back} earlier session(s) backfilled.` : '');
+  return `${d.date} · ${nav} ${d.base_ccy} · ${d.n_priced}/78 ${tr('priced')}`
+       + (back ? '\n' + tr('backfilled', {n: back}) : '');
 }
 
 function runAction(urlPath, label) {
@@ -511,11 +568,11 @@ function runAction(urlPath, label) {
         } catch {
           detail = `HTTP ${res.statusCode}`;
         }
-        notify(res.statusCode === 200 ? `${label} 已更新` : `${label} 未能更新`, detail);
+        notify(`${label} ${res.statusCode === 200 ? tr('updated') : tr('failed')}`, detail);
       });
     });
-  req.on('error', e => notify(`${label} 未能更新`, e.message));
-  req.on('timeout', () => { req.destroy(); notify(`${label} 超时 / timed out`, urlPath); });
+  req.on('error', e => notify(`${label} ${tr('failed')}`, e.message));
+  req.on('timeout', () => { req.destroy(); notify(`${label} ${tr('timedOut')}`, urlPath); });
   req.end();
 }
 
@@ -619,12 +676,12 @@ function buildTray(userData) {
   tray = new Tray(image);
   // The standing reminder that closing the window did not quit the app. The
   // one-time notification tells you once; this is here every time you look.
-  tray.setToolTip(`Horizon Holdings ${app.getVersion()} — 后台运行中 / running in background`);
+  tray.setToolTip(`Horizon Holdings ${app.getVersion()} — ${tr('tooltip')}`);
 
   const refreshMenu = () => {
     const openAtLogin = app.getLoginItemSettings().openAtLogin;
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: '打开窗口 / Show', click: showWindow },
+      { label: tr('show'), click: showWindow },
       { type: 'separator' },
       // Each item names what it actually fetches. The old single "Fetch now"
       // said nothing about WHICH of the app's two independent pipelines it
@@ -633,23 +690,23 @@ function buildTray(userData) {
       // NB: '&&' renders one literal ampersand; a single '&' is a Windows
       // menu mnemonic and would silently underline the next letter instead.
       {
-        label: '更新行情与净值 / Update prices && NAV',
-        toolTip: '抓取收盘价与汇率,重算净值(每日)',
-        click: () => runAction('/api/refresh', '行情与净值 / Prices & NAV'),
+        label: tr('updatePrices'),
+        toolTip: tr('updatePricesTip'),
+        click: () => runAction('/api/refresh', tr('labelPrices')),
       },
       {
-        label: '更新 P/E、股息率、Beta / Update fundamentals',
-        toolTip: '每季度一次;同一季度内重复点击会被跳过',
-        click: () => runAction('/api/refresh_fundamentals', '基本面 / Fundamentals'),
+        label: tr('updateFundamentals'),
+        toolTip: tr('updateFundamentalsTip'),
+        click: () => runAction('/api/refresh_fundamentals', tr('labelFundamentals')),
       },
       { type: 'separator' },
-      { label: '导入数据库… / Import database…', click: () => importDatabaseNow(userData) },
-      { label: '这个应用是怎么做出来的 / How this app was built', click: openGuide },
-      { label: '打开数据文件夹 / Open data folder', click: () => shell.openPath(userData) },
-      { label: `版本 / Version ${app.getVersion()}`, enabled: false },
+      { label: tr('importDb'), click: () => importDatabaseNow(userData) },
+      { label: tr('howBuilt'), click: openGuide },
+      { label: tr('openData'), click: () => shell.openPath(userData) },
+      { label: `${tr('version')} ${app.getVersion()}`, enabled: false },
       { type: 'separator' },
       {
-        label: '开机自启 / Start at login',
+        label: tr('startAtLogin'),
         type: 'checkbox',
         checked: openAtLogin,
         click: menuItem => {
@@ -661,7 +718,7 @@ function buildTray(userData) {
         },
       },
       { type: 'separator' },
-      { label: '退出 / Quit', click: () => { isQuitting = true; app.quit(); } },
+      { label: tr('quit'), click: () => { isQuitting = true; app.quit(); } },
     ]));
   };
 
@@ -717,6 +774,18 @@ if (!app.requestSingleInstanceLock()) {
     // The two channels preload.js exposes, and the only ones that exist. Both
     // are registered after userData is known, because the import needs it.
     ipcMain.handle('db:import', () => importDatabaseNow(userData));
+    uiLang = readSettings(userData).language || 'en';
+    ipcMain.handle('app:setLanguage', (_e, lang) => {
+      // The window changed language; bring the tray with it so the two halves
+      // of the app never disagree about which language the user chose.
+      const next = (lang === 'zh') ? 'zh' : 'en';
+      if (next === uiLang) return uiLang;
+      uiLang = next;
+      writeSettings(userData, { language: uiLang });
+      if (tray) buildTray(userData);
+      log(`language switched to ${uiLang}`);
+      return uiLang;
+    });
     ipcMain.handle('app:version', () => {
       // The page requests this on load, so seeing it in the log is proof the
       // preload bridge actually loaded. If preload.js goes missing from the

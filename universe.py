@@ -98,6 +98,22 @@ UNIVERSE = {
     'KRZ.IR': dict(name='凯瑞集团', yahoo='KRZ.IR', country='爱尔兰', exchange='Euronext Dublin', ccy='EUR', sector='Consumer Staples', industry='食品配料/风味科技', moat='全球领先食品配料与风味科技公司,深度嵌入客户产品配方研发流程,转换成本高,近似隐形冠军型护城河', score=3),
 }
 
+# Merge in the English text. Kept in a separate module so the dict above stays
+# readable and a translation can be reviewed on its own.
+#
+# A ticker absent from TRANSLATIONS falls back to its Chinese text rather than to
+# an empty string: an untranslated row is obvious to a reader and harmless, while
+# a blank one looks like missing data.
+from universe_en import TRANSLATIONS as _EN, COUNTRIES as _EN_COUNTRY, EXCHANGES as _EN_EXCH
+
+for _ticker, _entry in UNIVERSE.items():
+    _t = _EN.get(_ticker, {})
+    _entry["name_en"] = _t.get("name") or _entry["name"]
+    _entry["industry_en"] = _t.get("industry") or _entry["industry"]
+    _entry["moat_en"] = _t.get("moat") or _entry["moat"]
+    _entry["country_en"] = _EN_COUNTRY.get(_entry["country"], _entry["country"])
+    _entry["exchange_en"] = _EN_EXCH.get(_entry["exchange"], _entry["exchange"])
+
 # Yahoo FX pairs: value = USD per 1 unit of the currency
 FX_PAIRS = {c: c + "USD=X" for c in sorted({v["ccy"] for v in UNIVERSE.values()} - {NUMERAIRE})}
 

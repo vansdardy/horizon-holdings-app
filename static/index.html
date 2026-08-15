@@ -10,6 +10,7 @@
      and to static/vendor when the file is opened straight from disk. -->
 <script src="vendor/chart.umd.min.js"></script>
 <script src="lib/portfolio-lib.js"></script>
+<script src="lib/i18n.js"></script>
 <script>
 // If the chart library fails to load for any reason, `Chart` never gets defined.
 // Without a stub, the FIRST `Chart.defaults...` line or `new Chart(...)` call
@@ -102,6 +103,12 @@ window.addEventListener('DOMContentLoaded', function(){
     border-bottom: 1px solid var(--hairline); padding-bottom: 2px;
   }
   .guide-link a:hover{ color: var(--gold); border-bottom-color: var(--gold); }
+  #langBtn{
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    color: var(--text-faint); background: none; cursor: pointer;
+    border: 1px solid var(--hairline); border-radius: 2px; padding: 3px 9px;
+  }
+  #langBtn:hover{ color: var(--gold); border-color: var(--gold); }
 
   /* ---------- Ticker tape signature ---------- */
   .ticker-wrap{
@@ -405,77 +412,68 @@ window.addEventListener('DOMContentLoaded', function(){
 
 <header>
   <div class="eyebrow">PORTFOLIO CONSTRUCTION · 20&ndash;30 YEAR HORIZON</div>
-  <h1>巴菲特式<em>全球价值</em>组合</h1>
-  <div class="subhead">
-    以巴菲特/Berkshire核心选股逻辑为基准 —— 可理解的商业模式、可持续的经济护城河、
-    诚信且资本配置能力强的管理层、合理的估值安全边际 —— 构建的<b>78支个股</b>组合,
-    覆盖<b>11个Bloomberg板块</b>与<b>12个市场</b>(美/加/日 + 英/法/德/荷/瑞士/比利时/意大利/丹麦/爱尔兰)。
-    科技板块对chokepoint型公司(如ASML、Arm、东京电子)做了适度放宽,但排除纯题材投机标的；
-    欧洲覆盖已按需求扩展,卢森堡经评估后未纳入(详见持仓表说明)。
-  </div>
+  <h1 data-i18n-html="hero.h1">Global <em>Value</em> Portfolio</h1>
+  <div class="subhead" data-i18n-html="hero.sub"></div>
   <div class="guide-link">
-    <a id="guideLink" href="/guide" target="_blank">这个应用是怎么做出来的 · How this app was built &rarr;</a>
+    <button id="langBtn" type="button" title="English / 中文">中文</button>
+    <span style="opacity:.35;padding:0 8px;">|</span>
+    <a id="guideLink" href="/guide" target="_blank" data-i18n="hero.guide">How this app was built &rarr;</a>
   </div>
 </header>
 
 <main>
 
   <section id="kpi-section">
-    <div class="section-title"><span class="num">01</span><h2>组合概览 Portfolio at a Glance</h2></div>
+    <div class="section-title"><span class="num">01</span><h2 data-i18n="s01.title">Portfolio at a Glance</h2></div>
     <div id="fundBanner" style="font-family:var(--mono);font-size:11px;color:var(--text-faint);margin-bottom:12px;"></div>
     <div class="kpi-row" id="kpiRow"></div>
   </section>
 
   <section id="alloc-section">
-    <div class="section-title"><span class="num">02</span><h2>板块 &amp; 地域配置</h2></div>
-    <div class="section-desc">权重由每支个股的"信心分"(1&ndash;6分,反映护城河强度与巴菲特式选股逻辑契合度)驱动生成 —— 非市值加权,亦非价格动量。</div>
+    <div class="section-title"><span class="num">02</span><h2 data-i18n="s02.title">Sector &amp; Geographic Allocation</h2></div>
+    <div class="section-desc" data-i18n="s02.desc"></div>
     <div class="chart-row">
       <div class="chart-card">
-        <h3>行业配置 · Bloomberg Sector</h3>
+        <h3 data-i18n="s02.sector">Sector · Bloomberg</h3>
         <canvas id="sectorChart"></canvas>
       </div>
       <div class="chart-card">
-        <h3>地域配置 · Geography</h3>
+        <h3 data-i18n="s02.geo">Geography</h3>
         <canvas id="countryChart"></canvas>
       </div>
     </div>
   </section>
 
   <section id="valuemap-section">
-    <div class="section-title"><span class="num">03</span><h2>价值地图 Value Map</h2></div>
-    <div class="section-desc">横轴为估值(P/E,越靠左越便宜)、纵轴为股息率(越靠上收益越高)、气泡大小为组合权重、颜色代表板块 —— 直观呈现组合的"价值 + 收益"分布特征。数据为近似估算,悬停查看个股详情。</div>
+    <div class="section-title"><span class="num">03</span><h2 data-i18n="s03.title">Value Map</h2></div>
+    <div class="section-desc" data-i18n="s03.desc"></div>
     <div class="valuemap-card">
       <canvas id="valueMapChart"></canvas>
-      <div class="legend-note">// 气泡越大 = 组合权重越高 · 左上角象限 = 低估值 + 高股息(经典价值区)</div>
+      <div class="legend-note" data-i18n="s03.legend"></div>
     </div>
   </section>
 
   <section id="holdings-section">
-    <div class="section-title"><span class="num">04</span><h2>持仓明细 Holdings</h2></div>
-    <div class="section-desc">点击任意行展开查看护城河 / 选股逻辑说明。点击表头可排序。<br>
-    <span style="color:var(--text-faint)">「交易所」列的
-    <span class="ibkr-code" style="font-size:9px;padding:1px 5px;">绿色代码</span>
-    是我核对过 IBKR 官方文档与真实用户 symbol mapping 确认的 IBKR 内部代码(不少和交易所俗名不同,比如法兰克福在 IBKR 里叫 <b>IBIS</b>、东京叫 <b>TSEJ</b> 以区别于多伦多的 <b>TSE</b>);
-    <span class="ibkr-code unverified" style="font-size:9px;padding:1px 5px;">橙色"未核实"</span>
-    的两处(比利时、爱尔兰)是我没能找到可靠来源确认的,下单前请在 IBKR 里用代码或 ISIN 直接搜索核实。这一列仅供参考,不构成下单指令。</span></div>
+    <div class="section-title"><span class="num">04</span><h2 data-i18n="s04.title">Holdings</h2></div>
+    <div class="section-desc"><span data-i18n="s04.desc"></span><br><span style="color:var(--text-faint)" data-i18n-html="s04.ibkrNote"></span></div>
     <div class="filter-bar">
-      <select id="sectorFilter"><option value="">全部板块 Sector</option></select>
-      <select id="countryFilter"><option value="">全部地区 Region</option></select>
-      <select id="exchFilter"><option value="">全部交易所 Exchange</option></select>
-      <input id="searchInput" type="text" placeholder="搜索代码或公司名称 Search ticker / name..." />
+      <select id="sectorFilter"><option value="" data-i18n="filter.allSector">All sectors</option></select>
+      <select id="countryFilter"><option value="" data-i18n="filter.allRegion">All regions</option></select>
+      <select id="exchFilter"><option value="" data-i18n="filter.allExchange">All exchanges</option></select>
+      <input id="searchInput" type="text" data-i18n-ph="filter.search" placeholder="Search ticker or company name..." />
       <span class="result-count" id="resultCount"></span>
     </div>
     <div class="table-wrap" id="holdingsTableWrap">
       <table>
         <thead>
           <tr>
-            <th data-key="t">代码</th>
-            <th data-key="n">公司名称</th>
-            <th data-key="c">地区</th>
-            <th data-key="x">交易所<div style="font-weight:400;opacity:.6">IBKR代码</div></th>
-            <th data-key="s">板块</th>
-            <th data-key="w" class="num">权重%</th>
-            <th data-key="dy" class="num">股息率%</th>
+            <th data-key="t" data-i18n="th.ticker">Ticker</th>
+            <th data-key="n" data-i18n="th.company">Company</th>
+            <th data-key="c" data-i18n="th.region">Region</th>
+            <th data-key="x"><span data-i18n="th.exchange">Exchange</span><div style="font-weight:400;opacity:.6" data-i18n="th.ibkrCode">IBKR code</div></th>
+            <th data-key="s" data-i18n="th.sector">Sector</th>
+            <th data-key="w" class="num" data-i18n="th.weight">Weight %</th>
+            <th data-key="dy" class="num" data-i18n="th.divYield">Div. yield %</th>
             <th data-key="pe" class="num">P/E</th>
             <th data-key="beta" class="num">Beta</th>
           </tr>
@@ -486,12 +484,8 @@ window.addEventListener('DOMContentLoaded', function(){
   </section>
 
   <section id="nav-section">
-    <div class="section-title"><span class="num">05</span><h2>模型指数净值 Model Index NAV</h2></div>
-    <div class="section-desc">
-      规则:初始NAV = 100亿(基准货币,默认CHF)&divide; 2亿份 = <b>每份 50.00</b>;后端每日收盘后抓取一次价格并重算NAV;
-      <b>只买整数股</b>,余额按上市地本币留存(7个货币现金池);每年首个交易日按信心分目标权重<b>再平衡一次</b>。
-      这是一条<b>从部署当天开始向前累积</b>的真实净值曲线 —— 不是回测。
-    </div>
+    <div class="section-title"><span class="num">05</span><h2 data-i18n="s05.title">Model Index NAV</h2></div>
+    <div class="section-desc" data-i18n-html="s05.desc"></div>
 
     <div class="reset-banner" id="resetBanner" style="display:none;">
       <p>净值序列以 <b id="rbOld">?</b> 播种,但当前配置(<code>.env</code> 里的 <code>BASE_CCY</code>)是
@@ -501,14 +495,14 @@ window.addEventListener('DOMContentLoaded', function(){
     </div>
 
     <div class="statusbar" id="statusBar">
-      <span class="lbl">状态</span><span class="val" id="sbConn">连接中…</span>
+      <span class="lbl" data-i18n="status.label">Status</span><span class="val" id="sbConn" data-i18n="status.connecting">Connecting…</span>
       <span class="spacer">
-        <button class="run-btn ghost" id="refreshBtn">立即抓取一次</button>
+        <button class="run-btn ghost" id="refreshBtn" data-i18n="status.refresh">Fetch now</button>
       </span>
     </div>
 
     <div class="offline-box" id="offlineBox" style="display:none;">
-      <h4>后端未运行</h4>
+      <h4 data-i18n="offline.h4">Backend not running</h4>
       <p>本页的净值曲线与持仓记录需要本地后端提供数据与持久化存储。启动方式:</p>
       <pre>cd app
 pip install -r requirements.txt
@@ -533,58 +527,52 @@ python server.py            # → http://127.0.0.1:8000</pre>
         <button class="tf-btn" data-tf="10Y">10Y</button>
         <span style="width:14px"></span>
         <label style="font-family:var(--mono);font-size:11.5px;color:var(--text-dim);display:flex;align-items:center;gap:7px;">
-          假设起始日 <input type="date" id="simDate" class="tf-date">
+          <span data-i18n="sim.label">Hypothetical start date</span> <input type="date" id="simDate" class="tf-date">
         </label>
-        <button class="run-btn ghost" id="simRun" style="padding:5px 12px;">重算</button>
-        <button class="run-btn ghost" id="simClear" style="padding:5px 12px;display:none;">回到实际</button>
+        <button class="run-btn ghost" id="simRun" style="padding:5px 12px;" data-i18n="sim.run">Recompute</button>
+        <button class="run-btn ghost" id="simClear" style="padding:5px 12px;display:none;" data-i18n="sim.clear">Back to actual</button>
         <span class="tf-note" id="tfNote"></span>
       </div>
       <div class="chart-card" style="margin-top:4px;">
-        <h3>净值曲线 · NAV per Share <span id="navCcyLabel"></span></h3>
+        <h3><span data-i18n="nav.chartTitle">NAV per unit</span> <span id="navCcyLabel"></span></h3>
         <canvas id="navChart"></canvas>
       </div>
     </div>
   </section>
 
   <section id="posSection">
-    <div class="section-title"><span class="num">06</span><h2>我的持仓 My Positions</h2></div>
-    <div class="section-desc">
-      填入你<b>实际持有的股数</b>与<b>平均成本(每股,以该股上市地本币计)</b> —— 就是券商账户里显示的那两个数字。
-      系统会算出浮盈浮亏、你的<b>实际权重</b>、与目标权重的<b>偏离度</b>,以及补齐到目标权重<b>还差多少股</b>。
-      定投过程中每次加仓后更新一下,就能看到自己的组合怎样一步步向目标结构靠拢。
-    </div>
+    <div class="section-title"><span class="num">06</span><h2 data-i18n="s06.title">My Positions</h2></div>
+    <div class="section-desc" data-i18n-html="s06.desc"></div>
 
     <div class="warn-band">
-      <div class="wt">⚠ 关于「还差多少股」这一列</div>
-      <p>该列是<b>纯数学计算</b>:按你当前组合总市值 × 目标权重,再减去你已持有的市值,换算成股数。
-      它<b>不考虑</b>你的现金、税务处理(TFSA/RRSP/非注册账户的差异)、交易成本、汇率成本、也不判断当前价格是否合适。
-      <b>它是一个对照工具,不是买入建议。</b>实际操作请自行判断,必要时咨询持牌顾问。</p>
+      <div class="wt" data-i18n="warn.gapTitle"></div>
+      <p data-i18n-html="warn.gapBody"></p>
     </div>
 
     <div class="kpi-row" id="posKpis" style="margin-bottom:20px;"></div>
 
     <div style="font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--text-faint);margin-bottom:8px;">
-      现金余额 CASH · 按币种填写(未买成股票的部分)
+      <span data-i18n="cash.label"></span>
     </div>
     <div class="cash-grid" id="cashGrid"></div>
 
     <div class="toolbar">
-      <button class="run-btn" id="saveBtn">保存持仓</button>
-      <button class="run-btn ghost" id="exportBtn">导出 JSON</button>
-      <a class="run-btn ghost" id="backupBtn" href="#" style="text-decoration:none;display:inline-block;">备份数据库</a>
+      <button class="run-btn" id="saveBtn" data-i18n="btn.save">Save positions</button>
+      <button class="run-btn ghost" id="exportBtn" data-i18n="btn.export">Export JSON</button>
+      <a class="run-btn ghost" id="backupBtn" href="#" style="text-decoration:none;display:inline-block;" data-i18n="btn.backup">Back up database</a>
       <!-- Desktop app only: needs a native file dialog and a backend restart,
            neither of which a browser tab can do. Hidden unless window.desktop
            exists, which is how the page detects it is running inside Electron. -->
       <button class="run-btn ghost" id="importDbBtn" style="display:none;"
-              title="从文件导入 portfolio.db —— 会先自动备份当前数据">导入数据库…</button>
+              data-i18n-title="btn.importTitle" data-i18n="btn.import">Import database…</button>
       <span id="desktopVersion" style="display:none;font-family:var(--mono);font-size:10.5px;color:var(--text-faint);align-self:center;"></span>
-      <label><input type="checkbox" id="onlyHeld"> 只看已持有</label>
-      <label><input type="checkbox" id="useCashGap"> 差额计入现金</label>
+      <label><input type="checkbox" id="onlyHeld"> <span data-i18n="chk.onlyHeld">Only held</span></label>
+      <label><input type="checkbox" id="useCashGap"> <span data-i18n="chk.cashGap">Include cash in the gap</span></label>
       <select id="posCountryFilter" style="background:var(--bg-raised);border:1px solid #3A4657;color:#F5F1E6;font-family:var(--mono);font-size:12px;padding:5px 8px;">
-        <option value="">全部地区 Region</option>
+        <option value="" data-i18n="filter.allRegion">All regions</option>
       </select>
-      <input id="posSearch" type="text" placeholder="搜索代码或公司名称..." style="background:#1C2531;border:1px solid #3A4657;color:#F5F1E6;font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:2px;min-width:180px;">
-      <label>报告货币
+      <input id="posSearch" type="text" data-i18n-ph="pos.search" placeholder="Search ticker or company name..." style="background:#1C2531;border:1px solid #3A4657;color:#F5F1E6;font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:2px;min-width:180px;">
+      <label><span data-i18n="pos.reportCcy">Reporting currency</span>
         <select id="baseCcy" style="background:var(--bg-raised);border:1px solid #3A4657;color:#F5F1E6;font-family:var(--mono);font-size:12px;padding:5px 8px;">
         </select>
       </label>
@@ -596,14 +584,14 @@ python server.py            # → http://127.0.0.1:8000</pre>
       <table>
         <thead>
           <tr>
-            <th>代码</th><th>公司</th><th>地区</th>
-            <th class="num">持股数</th><th class="num">平均成本</th>
-            <th class="num">现价<div style="font-weight:400;opacity:.6">本币</div></th>
-            <th class="num">市值<div style="font-weight:400;opacity:.6" id="hdrCcy1">—</div></th>
-            <th class="num">浮盈亏<div style="font-weight:400;opacity:.6" id="hdrCcy2">—</div></th>
+            <th data-i18n="th.ticker">Ticker</th><th data-i18n="th.company">Company</th><th data-i18n="th.region">Region</th>
+            <th class="num" data-i18n="posTh.shares">Shares</th><th class="num" data-i18n="posTh.avgCost">Avg. cost</th>
+            <th class="num"><span data-i18n="posTh.price">Price</span><div style="font-weight:400;opacity:.6" data-i18n="posTh.local">local</div></th>
+            <th class="num"><span data-i18n="posTh.marketValue">Market value</span><div style="font-weight:400;opacity:.6" id="hdrCcy1">—</div></th>
+            <th class="num"><span data-i18n="posTh.pnl">P&amp;L</span><div style="font-weight:400;opacity:.6" id="hdrCcy2">—</div></th>
             <th class="num">%</th>
-            <th class="num">实际权重</th><th class="num">目标权重</th><th class="num">偏离</th>
-            <th class="num">差额股数</th>
+            <th class="num" data-i18n="posTh.actualWeight">Actual weight</th><th class="num" data-i18n="posTh.targetWeight">Target weight</th><th class="num" data-i18n="posTh.drift">Drift</th>
+            <th class="num" data-i18n="posTh.gapShares">Shares to target</th>
           </tr>
         </thead>
         <tbody id="posBody"></tbody>
@@ -611,7 +599,7 @@ python server.py            # → http://127.0.0.1:8000</pre>
     </div>
 
     <div class="chart-card" style="margin-top:20px;">
-      <h3>板块层面 · 实际权重 vs 目标权重</h3>
+      <h3 data-i18n="drift.title">By sector · actual vs target weight</h3>
       <canvas id="sectorDriftChart"></canvas>
     </div>
   </section>
@@ -619,13 +607,12 @@ python server.py            # → http://127.0.0.1:8000</pre>
 </main>
 
 <footer>
-  <div class="disc-title">Disclaimer 免责声明</div>
-  <p>本页面所有股息率 / P/E / Beta / 预期回报等数据均为基于公开认知的近似估算(约2026年年中量级),用于组合结构设计与教学演示目的,并非实时行情,不构成投资建议。
-  实际配置前请以权威数据源(如Bloomberg终端)核实最新数据,并咨询持牌财务顾问。过往表现或历史区间不代表未来收益,投资股票存在本金损失的风险。</p>
+  <div class="disc-title" data-i18n="disc.title">Disclaimer</div>
+  <p data-i18n-html="disc.body"></p>
 </footer>
 
 <script>
-const DATA = [{"t": "BRK.B", "n": "伯克希尔哈撒韦", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Financials", "ind": "多元化保险控股集团", "m": "Buffett本尊,保险浮存金(float)+跨行业资本配置,新任CEO Greg Abel延续投资纪律", "sc": 6, "dy": 0.0, "pe": 15.0, "beta": 0.85, "w": 0.021661}, {"t": "AAPL", "n": "苹果", "c": "美国", "x": "NASDAQ", "cur": "USD", "s": "Technology", "ind": "消费电子/生态系统", "m": "iOS生态黏性+品牌忠诚度,Buffett实际第一大重仓股", "sc": 6, "dy": 0.004, "pe": 30.0, "beta": 1.2, "w": 0.021661}, {"t": "MSFT", "n": "微软", "c": "美国", "x": "NASDAQ", "cur": "USD", "s": "Technology", "ind": "企业软件/云计算", "m": "企业客户转换成本高,Azure云基础设施护城河(激进放宽项)", "sc": 5, "dy": 0.007, "pe": 33.0, "beta": 0.9, "w": 0.018051}, {"t": "BAC", "n": "美国银行", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Financials", "ind": "零售/商业银行", "m": "Buffett长期持仓,存款规模与网点护城河", "sc": 4, "dy": 0.023, "pe": 13.0, "beta": 1.3, "w": 0.01444}, {"t": "AXP", "n": "美国运通", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Financials", "ind": "信用卡/支付", "m": "Buffett经典长期持仓,支付网络+高端客群品牌溢价", "sc": 5, "dy": 0.01, "pe": 19.0, "beta": 1.2, "w": 0.018051}, {"t": "MCO", "n": "穆迪", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Financials", "ind": "信用评级", "m": "评级行业双寡头之一,Buffett长期重仓", "sc": 5, "dy": 0.007, "pe": 35.0, "beta": 1.1, "w": 0.018051}, {"t": "V", "n": "Visa", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Financials", "ind": "支付网络", "m": "轻资产、高利润率的全球支付网络效应", "sc": 5, "dy": 0.007, "pe": 28.0, "beta": 0.95, "w": 0.018051}, {"t": "MA", "n": "万事达", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Financials", "ind": "支付网络", "m": "与Visa共同构成支付双寡头", "sc": 4, "dy": 0.005, "pe": 32.0, "beta": 1.05, "w": 0.01444}, {"t": "SPGI", "n": "标普全球", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Financials", "ind": "评级/指数/数据", "m": "评级+指数数据双重护城河", "sc": 4, "dy": 0.007, "pe": 34.0, "beta": 1.1, "w": 0.01444}, {"t": "KO", "n": "可口可乐", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Consumer Staples", "ind": "饮料", "m": "Buffett标志性持仓,全球品牌与渠道护城河", "sc": 6, "dy": 0.028, "pe": 24.0, "beta": 0.6, "w": 0.021661}, {"t": "PG", "n": "宝洁", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Consumer Staples", "ind": "日用消费品", "m": "多品牌矩阵,定价权与规模效应", "sc": 4, "dy": 0.024, "pe": 24.0, "beta": 0.5, "w": 0.01444}, {"t": "COST", "n": "好市多", "c": "美国", "x": "NASDAQ", "cur": "USD", "s": "Consumer Discretionary", "ind": "会员制仓储零售", "m": "会员费驱动的商业模式,Munger长期推崇", "sc": 5, "dy": 0.005, "pe": 48.0, "beta": 0.8, "w": 0.018051}, {"t": "MCD", "n": "麦当劳", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Consumer Discretionary", "ind": "餐饮特许经营", "m": "特许经营+地产双重护城河", "sc": 4, "dy": 0.023, "pe": 24.0, "beta": 0.7, "w": 0.01444}, {"t": "JNJ", "n": "强生", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Health Care", "ind": "多元医疗保健", "m": "多元产品线,现金流极其稳定(股息贵族)", "sc": 4, "dy": 0.03, "pe": 15.0, "beta": 0.5, "w": 0.01444}, {"t": "UNH", "n": "联合健康", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Health Care", "ind": "managed care健康险", "m": "Buffett持仓,医保规模效应(近年监管与医疗成本压力需关注)", "sc": 3, "dy": 0.028, "pe": 14.0, "beta": 0.6, "w": 0.01083}, {"t": "UNP", "n": "联合太平洋铁路", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Industrials", "ind": "货运铁路", "m": "北美铁路双寡头基础设施护城河,准入壁垒极高", "sc": 5, "dy": 0.022, "pe": 20.0, "beta": 1.0, "w": 0.018051}, {"t": "WM", "n": "美国废物管理", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Industrials", "ind": "固废处理", "m": "区域垃圾处理/填埋场特许经营壁垒", "sc": 4, "dy": 0.014, "pe": 30.0, "beta": 0.8, "w": 0.01444}, {"t": "CVX", "n": "雪佛龙", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Energy", "ind": "一体化石油天然气", "m": "Buffett持仓,一体化能源龙头,资产负债表稳健", "sc": 4, "dy": 0.042, "pe": 14.0, "beta": 1.0, "w": 0.01444}, {"t": "OXY", "n": "西方石油", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Energy", "ind": "石油天然气开采", "m": "Buffett重仓,二叠纪盆地低成本资源", "sc": 4, "dy": 0.018, "pe": 13.0, "beta": 1.5, "w": 0.01444}, {"t": "AMT", "n": "美国电塔", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Real Estate", "ind": "通信铁塔REIT", "m": "通信铁塔基础设施收租模式,长期租约现金流(REIT,估值以FFO更合适)", "sc": 3, "dy": 0.032, "pe": 40.0, "beta": 0.9, "w": 0.01083}, {"t": "GOOGL", "n": "谷歌/Alphabet", "c": "美国", "x": "NASDAQ", "cur": "USD", "s": "Communications", "ind": "搜索/广告/云", "m": "搜索垄断级护城河,Buffett近期新进持仓,2024年起首次分红", "sc": 5, "dy": 0.004, "pe": 22.0, "beta": 1.05, "w": 0.018051}, {"t": "NEE", "n": "新纪元能源", "c": "美国", "x": "NYSE", "cur": "USD", "s": "Utilities", "ind": "受监管电力+新能源", "m": "受监管公用事业现金流+新能源龙头地位", "sc": 3, "dy": 0.03, "pe": 20.0, "beta": 0.5, "w": 0.01083}, {"t": "CSU.TO", "n": "Constellation Software", "c": "加拿大", "x": "TSX", "cur": "CAD", "s": "Technology", "ind": "垂直行业软件", "m": "并购整合垂直软件资产,长期复利典范(Mark Leonard式资本配置)", "sc": 4, "dy": 0.0025, "pe": 50.0, "beta": 0.9, "w": 0.01444}, {"t": "RY.TO", "n": "加拿大皇家银行", "c": "加拿大", "x": "TSX", "cur": "CAD", "s": "Financials", "ind": "综合性银行", "m": "加拿大寡头银行体系,监管壁垒极高", "sc": 4, "dy": 0.035, "pe": 13.0, "beta": 0.9, "w": 0.01444}, {"t": "ATD.TO", "n": "Alimentation Couche-Tard", "c": "加拿大", "x": "TSX", "cur": "CAD", "s": "Consumer Staples", "ind": "便利店", "m": "便利店行业整合者,资本配置纪律出色", "sc": 3, "dy": 0.01, "pe": 18.0, "beta": 0.8, "w": 0.01083}, {"t": "QSR.TO", "n": "餐饮品牌国际", "c": "加拿大", "x": "TSX", "cur": "CAD", "s": "Consumer Discretionary", "ind": "餐饮特许经营", "m": "汉堡王/Tim Hortons/Popeyes特许经营组合(3G资本背景)", "sc": 2, "dy": 0.033, "pe": 19.0, "beta": 0.8, "w": 0.00722}, {"t": "CNR.TO", "n": "加拿大国家铁路", "c": "加拿大", "x": "TSX", "cur": "CAD", "s": "Industrials", "ind": "货运铁路", "m": "北美铁路双寡头之一,准入壁垒极高", "sc": 4, "dy": 0.02, "pe": 19.0, "beta": 0.8, "w": 0.01444}, {"t": "TRI", "n": "汤森路透", "c": "加拿大", "x": "TSX/NYSE", "cur": "CAD", "s": "Industrials", "ind": "专业信息与合规数据", "m": "订阅制专业信息服务,客户粘性强(对标标普全球评级/数据逻辑)", "sc": 3, "dy": 0.013, "pe": 38.0, "beta": 0.7, "w": 0.01083}, {"t": "CNQ.TO", "n": "加拿大自然资源", "c": "加拿大", "x": "TSX", "cur": "CAD", "s": "Energy", "ind": "油砂/常规油气", "m": "低成本长寿命油砂资源,自由现金流稳健", "sc": 3, "dy": 0.045, "pe": 13.0, "beta": 1.3, "w": 0.01083}, {"t": "NTR.TO", "n": "加拿大Nutrien", "c": "加拿大", "x": "TSX/NYSE", "cur": "CAD", "s": "Materials", "ind": "钾肥/农业投入品", "m": "全球最大钾肥生产商,资源禀赋壁垒", "sc": 2, "dy": 0.038, "pe": 18.0, "beta": 1.0, "w": 0.00722}, {"t": "FTS.TO", "n": "Fortis Inc", "c": "加拿大", "x": "TSX/NYSE", "cur": "CAD", "s": "Utilities", "ind": "受监管电力/燃气", "m": "50年连续股息增长记录,受监管公用事业现金流", "sc": 3, "dy": 0.039, "pe": 18.0, "beta": 0.3, "w": 0.01083}, {"t": "HSBA.L", "n": "汇丰控股", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Financials", "ind": "全球银行", "m": "全球贸易融资网络,亚洲业务敞口", "sc": 3, "dy": 0.055, "pe": 9.0, "beta": 1.0, "w": 0.01083}, {"t": "DGE.L", "n": "帝亚吉欧", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Consumer Staples", "ind": "烈酒", "m": "烈酒品牌矩阵,提价能力强", "sc": 4, "dy": 0.038, "pe": 17.0, "beta": 0.7, "w": 0.01444}, {"t": "ULVR.L", "n": "联合利华", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Consumer Staples", "ind": "日用消费品", "m": "全球日用消费品品牌矩阵", "sc": 3, "dy": 0.033, "pe": 19.0, "beta": 0.6, "w": 0.01083}, {"t": "AZN.L", "n": "阿斯利康", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Health Care", "ind": "创新药", "m": "肿瘤/罕见病管线专利护城河", "sc": 4, "dy": 0.02, "pe": 30.0, "beta": 0.5, "w": 0.01444}, {"t": "BA.L", "n": "BAE系统公司", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Industrials", "ind": "国防装备", "m": "英美长期国防合约,政府客户粘性(相对Buffett传统偏好的适度放宽)", "sc": 3, "dy": 0.021, "pe": 22.0, "beta": 0.8, "w": 0.01083}, {"t": "RIO.L", "n": "力拓集团", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Materials", "ind": "多元矿业", "m": "低成本铁矿石资源禀赋壁垒", "sc": 2, "dy": 0.06, "pe": 9.0, "beta": 1.1, "w": 0.00722}, {"t": "SGRO.L", "n": "Segro Plc", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Real Estate", "ind": "物流地产REIT", "m": "电商结构性增长受益的物流地产(REIT,估值以FFO更合适)", "sc": 2, "dy": 0.038, "pe": 20.0, "beta": 0.9, "w": 0.00722}, {"t": "NG.L", "n": "国家电网", "c": "英国", "x": "LSE", "cur": "GBP", "s": "Utilities", "ind": "受监管输配电", "m": "输配电网络垄断特许经营权", "sc": 3, "dy": 0.048, "pe": 15.0, "beta": 0.5, "w": 0.01083}, {"t": "ARM", "n": "Arm Holdings", "c": "英国", "x": "NASDAQ", "cur": "USD", "s": "Technology", "ind": "芯片架构IP", "m": "移动芯片架构近垄断级授权模式,产业链chokepoint(估值偏高,风险需关注);英国公司但以ADS形式在纳斯达克以美元交易,故计价货币为USD", "sc": 3, "dy": 0.0, "pe": 70.0, "beta": 1.5, "w": 0.01083}, {"t": "RMS.PA", "n": "爱马仕", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Consumer Discretionary", "ind": "奢侈品", "m": "极致稀缺性驱动的定价权,几乎不打折的品牌护城河", "sc": 4, "dy": 0.008, "pe": 45.0, "beta": 1.0, "w": 0.01444}, {"t": "MC.PA", "n": "LVMH", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Consumer Discretionary", "ind": "奢侈品集团", "m": "多品牌奢侈品矩阵,规模与渠道优势", "sc": 3, "dy": 0.02, "pe": 22.0, "beta": 1.0, "w": 0.01083}, {"t": "OR.PA", "n": "欧莱雅", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Consumer Staples", "ind": "美妆", "m": "全球美妆品类龙头,研发与渠道双重护城河", "sc": 4, "dy": 0.017, "pe": 30.0, "beta": 0.7, "w": 0.01444}, {"t": "RI.PA", "n": "保乐力加", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Consumer Staples", "ind": "烈酒", "m": "全球烈酒品牌组合(近年新兴市场需求波动需关注)", "sc": 2, "dy": 0.03, "pe": 16.0, "beta": 0.8, "w": 0.00722}, {"t": "SAN.PA", "n": "赛诺菲", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Health Care", "ind": "制药/疫苗", "m": "疫苗+专科药物专利组合", "sc": 3, "dy": 0.035, "pe": 13.0, "beta": 0.6, "w": 0.01083}, {"t": "SU.PA", "n": "施耐德电气", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Industrials", "ind": "电气化/能效设备", "m": "电气化与能效设备装机基础护城河,长期结构性需求", "sc": 4, "dy": 0.018, "pe": 28.0, "beta": 1.0, "w": 0.01444}, {"t": "TTE.PA", "n": "道达尔能源", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Energy", "ind": "一体化能源", "m": "一体化能源龙头,资产负债表稳健", "sc": 3, "dy": 0.055, "pe": 9.0, "beta": 1.0, "w": 0.01083}, {"t": "AI.PA", "n": "液化空气集团", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Materials", "ind": "工业气体", "m": "工业气体管网基础设施,客户转换成本极高", "sc": 4, "dy": 0.017, "pe": 28.0, "beta": 0.7, "w": 0.01444}, {"t": "DSY.PA", "n": "达索系统", "c": "法国", "x": "Euronext Paris", "cur": "EUR", "s": "Technology", "ind": "工程仿真软件", "m": "工程仿真/PLM软件高粘性,订阅制收入", "sc": 3, "dy": 0.006, "pe": 35.0, "beta": 1.0, "w": 0.01083}, {"t": "SAP", "n": "思爱普", "c": "德国", "x": "XETRA", "cur": "EUR", "s": "Technology", "ind": "企业ERP软件", "m": "企业ERP系统转换成本极高,云转型进展顺利", "sc": 4, "dy": 0.01, "pe": 35.0, "beta": 0.9, "w": 0.01444}, {"t": "ALV.DE", "n": "安联", "c": "德国", "x": "XETRA", "cur": "EUR", "s": "Financials", "ind": "保险/资管", "m": "欧洲最大保险集团之一,浮存金逻辑近似Buffett偏好", "sc": 3, "dy": 0.042, "pe": 13.0, "beta": 0.9, "w": 0.01083}, {"t": "DB1.DE", "n": "德意志交易所", "c": "德国", "x": "XETRA", "cur": "EUR", "s": "Financials", "ind": "交易所基础设施", "m": "交易所/清算基础设施,近似收费站商业模式", "sc": 3, "dy": 0.025, "pe": 24.0, "beta": 0.8, "w": 0.01083}, {"t": "SIE.DE", "n": "西门子", "c": "德国", "x": "XETRA", "cur": "EUR", "s": "Industrials", "ind": "多元工业技术", "m": "多元工业技术集团,自动化与基建业务组合", "sc": 3, "dy": 0.018, "pe": 22.0, "beta": 1.1, "w": 0.01083}, {"t": "BAS.DE", "n": "巴斯夫", "c": "德国", "x": "XETRA", "cur": "EUR", "s": "Materials", "ind": "综合化工", "m": "一体化化工生产网络(Verbund),周期性较强(适度放宽项)", "sc": 2, "dy": 0.055, "pe": 16.0, "beta": 1.1, "w": 0.00722}, {"t": "DTE.DE", "n": "德国电信", "c": "德国", "x": "XETRA", "cur": "EUR", "s": "Communications", "ind": "电信运营", "m": "控股T-Mobile美国,用户黏性与规模效应", "sc": 2, "dy": 0.028, "pe": 17.0, "beta": 0.6, "w": 0.00722}, {"t": "ASML", "n": "阿斯麦", "c": "荷兰", "x": "Euronext Amsterdam", "cur": "EUR", "s": "Technology", "ind": "半导体设备", "m": "EUV光刻机全球独家供应商,半导体产业链关键节点(用户示例中的激进放宽项)", "sc": 6, "dy": 0.008, "pe": 32.0, "beta": 1.3, "w": 0.021661}, {"t": "HEIA.AS", "n": "喜力", "c": "荷兰", "x": "Euronext Amsterdam", "cur": "EUR", "s": "Consumer Staples", "ind": "啤酒", "m": "全球啤酒品牌组合,家族治理结构稳定", "sc": 3, "dy": 0.018, "pe": 18.0, "beta": 0.7, "w": 0.01083}, {"t": "WKL.AS", "n": "威科集团", "c": "荷兰", "x": "Euronext Amsterdam", "cur": "EUR", "s": "Industrials", "ind": "监管合规信息服务", "m": "法律/税务/医疗合规信息订阅护城河", "sc": 3, "dy": 0.012, "pe": 28.0, "beta": 0.7, "w": 0.01083}, {"t": "NESN.SW", "n": "雀巢", "c": "瑞士", "x": "SIX", "cur": "CHF", "s": "Consumer Staples", "ind": "食品饮料", "m": "全球最大食品饮料集团,品牌矩阵极其广泛(用户自身持仓)", "sc": 5, "dy": 0.033, "pe": 19.0, "beta": 0.5, "w": 0.018051}, {"t": "RO.SW", "n": "罗氏", "c": "瑞士", "x": "SIX", "cur": "CHF", "s": "Health Care", "ind": "制药/诊断", "m": "肿瘤/诊断领域专利护城河,诊断业务协同", "sc": 4, "dy": 0.038, "pe": 16.0, "beta": 0.5, "w": 0.01444}, {"t": "NOVN.SW", "n": "诺华", "c": "瑞士", "x": "SIX", "cur": "CHF", "s": "Health Care", "ind": "创新药", "m": "创新药专利管线,聚焦核心治疗领域后估值重估", "sc": 4, "dy": 0.035, "pe": 14.0, "beta": 0.6, "w": 0.01444}, {"t": "UBSG.SW", "n": "瑞银集团", "c": "瑞士", "x": "SIX", "cur": "CHF", "s": "Financials", "ind": "财富管理/投行", "m": "瑞士财富管理龙头,整合瑞信后规模效应扩大(整合执行风险需关注)", "sc": 2, "dy": 0.028, "pe": 13.0, "beta": 1.1, "w": 0.00722}, {"t": "ZURN.SW", "n": "苏黎世保险", "c": "瑞士", "x": "SIX", "cur": "CHF", "s": "Financials", "ind": "保险", "m": "保险浮存金逻辑,资本配置纪律良好", "sc": 3, "dy": 0.045, "pe": 13.0, "beta": 0.7, "w": 0.01083}, {"t": "ABBN.SW", "n": "ABB", "c": "瑞士", "x": "SIX", "cur": "CHF", "s": "Industrials", "ind": "电气化/工业自动化", "m": "电气化与工业自动化设备,长期电气化趋势受益", "sc": 3, "dy": 0.022, "pe": 24.0, "beta": 1.0, "w": 0.01083}, {"t": "8035.T", "n": "东京电子", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Technology", "ind": "半导体设备", "m": "半导体前道设备寡头之一,产业链关键节点", "sc": 4, "dy": 0.015, "pe": 28.0, "beta": 1.2, "w": 0.01444}, {"t": "6861.T", "n": "基恩士", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Technology", "ind": "工业传感器/自动化", "m": "工业传感器/机器视觉高毛利率,轻资产直销模式", "sc": 4, "dy": 0.006, "pe": 35.0, "beta": 1.0, "w": 0.01444}, {"t": "7741.T", "n": "豪雅", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Technology", "ind": "光掩膜基板/精密光学", "m": "半导体光掩膜基板与硬盘玻璃基板利基垄断", "sc": 3, "dy": 0.01, "pe": 30.0, "beta": 0.8, "w": 0.01083}, {"t": "8766.T", "n": "东京海上控股", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Financials", "ind": "保险", "m": "日本保险业龙头,浮存金逻辑", "sc": 3, "dy": 0.03, "pe": 16.0, "beta": 0.7, "w": 0.01083}, {"t": "4568.T", "n": "第一三共", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Health Care", "ind": "创新药/ADC", "m": "抗体偶联药物(ADC)技术授权管线,全球license-out收入", "sc": 2, "dy": 0.013, "pe": 45.0, "beta": 0.7, "w": 0.00722}, {"t": "8001.T", "n": "伊藤忠商事", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Industrials", "ind": "综合商社", "m": "Buffett/Berkshire实际持仓的五大商社之一,业务组合多元化", "sc": 3, "dy": 0.028, "pe": 11.0, "beta": 0.9, "w": 0.01083}, {"t": "8058.T", "n": "三菱商事", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Industrials", "ind": "综合商社", "m": "Buffett/Berkshire实际持仓的五大商社之一,资源+贸易组合", "sc": 3, "dy": 0.032, "pe": 10.0, "beta": 0.9, "w": 0.01083}, {"t": "7974.T", "n": "任天堂", "c": "日本", "x": "TSE", "cur": "JPY", "s": "Communications", "ind": "游戏/娱乐IP", "m": "独特游戏IP护城河,现金充裕且几乎零负债", "sc": 3, "dy": 0.015, "pe": 22.0, "beta": 0.8, "w": 0.01083}, {"t": "ABI.BR", "n": "百威英博", "c": "比利时", "x": "Euronext Brussels", "cur": "EUR", "s": "Consumer Staples", "ind": "啤酒", "m": "全球最大啤酒集团,品牌矩阵(百威/科罗娜/时代等)+全球分销网络规模效应;SABMiller并购后杠杆一度偏高,近年持续去杠杆,现金流改善", "sc": 3, "dy": 0.013, "pe": 18.0, "beta": 0.8, "w": 0.01083}, {"t": "RACE.MI", "n": "法拉利", "c": "意大利", "x": "Borsa Italiana/NYSE", "cur": "EUR", "s": "Consumer Discretionary", "ind": "豪华跑车", "m": "严格控产驱动的极致稀缺性与定价权,行业最高毛利率,逻辑近似爱马仕但估值更高;注:控股主体Ferrari N.V.注册于荷兰,品牌/总部/研发与生产核心均在意大利马拉内罗,按此归类意大利", "sc": 4, "dy": 0.007, "pe": 48.0, "beta": 1.0, "w": 0.01444}, {"t": "G.MI", "n": "忠利保险", "c": "意大利", "x": "Borsa Italiana", "cur": "EUR", "s": "Financials", "ind": "保险", "m": "意大利/欧洲主要保险集团之一,浮存金逻辑与巴菲特偏好契合;意大利主权风险溢价与历史欧债包袱需关注,故信心分适度保守", "sc": 2, "dy": 0.048, "pe": 11.0, "beta": 0.9, "w": 0.00722}, {"t": "NOVO-B.CO", "n": "诺和诺德", "c": "丹麦", "x": "Nasdaq Copenhagen", "cur": "DKK", "s": "Health Care", "ind": "糖尿病/减重药物", "m": "GLP-1类降糖/减重药物全球龙头(Ozempic/Wegovy),制造规模与专利先发优势构筑护城河;2024-2025年因礼来等竞争加剧及部分临床数据不及预期,估值已从高位大幅回落,波动性需关注", "sc": 4, "dy": 0.02, "pe": 24.0, "beta": 1.1, "w": 0.01444}, {"t": "CRH", "n": "CRH建材集团", "c": "爱尔兰", "x": "NYSE(原都柏林)", "cur": "USD", "s": "Materials", "ind": "建材/骨料", "m": "全球最大建材与骨料公司之一,区域采石场资源与许可壁垒形成天然区域性护城河;起家于爱尔兰,2023年将主要上市地迁至纽约证交所", "sc": 3, "dy": 0.014, "pe": 18.0, "beta": 1.0, "w": 0.01083}, {"t": "KRZ.IR", "n": "凯瑞集团", "c": "爱尔兰", "x": "Euronext Dublin", "cur": "EUR", "s": "Consumer Staples", "ind": "食品配料/风味科技", "m": "全球领先食品配料与风味科技公司,深度嵌入客户产品配方研发流程,转换成本高,近似隐形冠军型护城河", "sc": 3, "dy": 0.015, "pe": 22.0, "beta": 0.7, "w": 0.01083}];
+const DATA = [{"t": "BRK.B", "n": "伯克希尔哈撒韦", "n_en": "Berkshire Hathaway", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Financials", "ind": "多元化保险控股集团", "ind_en": "Diversified insurance holding", "m": "Buffett本尊,保险浮存金(float)+跨行业资本配置,新任CEO Greg Abel延续投资纪律", "m_en": "Buffett himself. Insurance float plus capital allocation across industries; incoming CEO Greg Abel continues the same discipline", "sc": 6, "dy": 0.0, "pe": 15.0, "beta": 0.85, "w": 0.021661}, {"t": "AAPL", "n": "苹果", "n_en": "Apple", "c": "美国", "c_en": "United States", "x": "NASDAQ", "x_en": "NASDAQ", "cur": "USD", "s": "Technology", "ind": "消费电子/生态系统", "ind_en": "Consumer electronics / ecosystem", "m": "iOS生态黏性+品牌忠诚度,Buffett实际第一大重仓股", "m_en": "iOS ecosystem lock-in and brand loyalty. Berkshire's largest single equity position", "sc": 6, "dy": 0.004, "pe": 30.0, "beta": 1.2, "w": 0.021661}, {"t": "MSFT", "n": "微软", "n_en": "Microsoft", "c": "美国", "c_en": "United States", "x": "NASDAQ", "x_en": "NASDAQ", "cur": "USD", "s": "Technology", "ind": "企业软件/云计算", "ind_en": "Enterprise software / cloud", "m": "企业客户转换成本高,Azure云基础设施护城河(激进放宽项)", "m_en": "High switching costs for enterprise customers, plus the Azure infrastructure moat (an aggressive relaxation of the criteria)", "sc": 5, "dy": 0.007, "pe": 33.0, "beta": 0.9, "w": 0.018051}, {"t": "BAC", "n": "美国银行", "n_en": "Bank of America", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Financials", "ind": "零售/商业银行", "ind_en": "Retail / commercial banking", "m": "Buffett长期持仓,存款规模与网点护城河", "m_en": "Long-standing Buffett holding. Moat is deposit scale and branch network", "sc": 4, "dy": 0.023, "pe": 13.0, "beta": 1.3, "w": 0.01444}, {"t": "AXP", "n": "美国运通", "n_en": "American Express", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Financials", "ind": "信用卡/支付", "ind_en": "Credit cards / payments", "m": "Buffett经典长期持仓,支付网络+高端客群品牌溢价", "m_en": "A classic long-term Buffett holding: payment network plus a brand premium among affluent customers", "sc": 5, "dy": 0.01, "pe": 19.0, "beta": 1.2, "w": 0.018051}, {"t": "MCO", "n": "穆迪", "n_en": "Moody's", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Financials", "ind": "信用评级", "ind_en": "Credit ratings", "m": "评级行业双寡头之一,Buffett长期重仓", "m_en": "One of the ratings duopoly. A long-standing large Buffett position", "sc": 5, "dy": 0.007, "pe": 35.0, "beta": 1.1, "w": 0.018051}, {"t": "V", "n": "Visa", "n_en": "Visa", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Financials", "ind": "支付网络", "ind_en": "Payment network", "m": "轻资产、高利润率的全球支付网络效应", "m_en": "Asset-light, high-margin global payment network effects", "sc": 5, "dy": 0.007, "pe": 28.0, "beta": 0.95, "w": 0.018051}, {"t": "MA", "n": "万事达", "n_en": "Mastercard", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Financials", "ind": "支付网络", "ind_en": "Payment network", "m": "与Visa共同构成支付双寡头", "m_en": "Forms the payments duopoly together with Visa", "sc": 4, "dy": 0.005, "pe": 32.0, "beta": 1.05, "w": 0.01444}, {"t": "SPGI", "n": "标普全球", "n_en": "S&P Global", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Financials", "ind": "评级/指数/数据", "ind_en": "Ratings / indices / data", "m": "评级+指数数据双重护城河", "m_en": "A double moat: credit ratings and index data", "sc": 4, "dy": 0.007, "pe": 34.0, "beta": 1.1, "w": 0.01444}, {"t": "KO", "n": "可口可乐", "n_en": "Coca-Cola", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Consumer Staples", "ind": "饮料", "ind_en": "Beverages", "m": "Buffett标志性持仓,全球品牌与渠道护城河", "m_en": "Buffett's signature holding. Global brand and distribution moat", "sc": 6, "dy": 0.028, "pe": 24.0, "beta": 0.6, "w": 0.021661}, {"t": "PG", "n": "宝洁", "n_en": "Procter & Gamble", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Consumer Staples", "ind": "日用消费品", "ind_en": "Household consumer goods", "m": "多品牌矩阵,定价权与规模效应", "m_en": "A portfolio of brands, pricing power and scale", "sc": 4, "dy": 0.024, "pe": 24.0, "beta": 0.5, "w": 0.01444}, {"t": "COST", "n": "好市多", "n_en": "Costco", "c": "美国", "c_en": "United States", "x": "NASDAQ", "x_en": "NASDAQ", "cur": "USD", "s": "Consumer Discretionary", "ind": "会员制仓储零售", "ind_en": "Membership warehouse retail", "m": "会员费驱动的商业模式,Munger长期推崇", "m_en": "Membership-fee business model. Long admired by Munger", "sc": 5, "dy": 0.005, "pe": 48.0, "beta": 0.8, "w": 0.018051}, {"t": "MCD", "n": "麦当劳", "n_en": "McDonald's", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Consumer Discretionary", "ind": "餐饮特许经营", "ind_en": "Restaurant franchising", "m": "特许经营+地产双重护城河", "m_en": "A double moat of franchising and real estate", "sc": 4, "dy": 0.023, "pe": 24.0, "beta": 0.7, "w": 0.01444}, {"t": "JNJ", "n": "强生", "n_en": "Johnson & Johnson", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Health Care", "ind": "多元医疗保健", "ind_en": "Diversified healthcare", "m": "多元产品线,现金流极其稳定(股息贵族)", "m_en": "Diversified product lines and exceptionally stable cash flow (a dividend aristocrat)", "sc": 4, "dy": 0.03, "pe": 15.0, "beta": 0.5, "w": 0.01444}, {"t": "UNH", "n": "联合健康", "n_en": "UnitedHealth", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Health Care", "ind": "managed care健康险", "ind_en": "Managed care health insurance", "m": "Buffett持仓,医保规模效应(近年监管与医疗成本压力需关注)", "m_en": "Buffett holding. Scale economics in managed care (recent regulatory and medical-cost pressure worth watching)", "sc": 3, "dy": 0.028, "pe": 14.0, "beta": 0.6, "w": 0.01083}, {"t": "UNP", "n": "联合太平洋铁路", "n_en": "Union Pacific", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Industrials", "ind": "货运铁路", "ind_en": "Freight rail", "m": "北美铁路双寡头基础设施护城河,准入壁垒极高", "m_en": "Half of the North American rail duopoly. Infrastructure moat with very high barriers to entry", "sc": 5, "dy": 0.022, "pe": 20.0, "beta": 1.0, "w": 0.018051}, {"t": "WM", "n": "美国废物管理", "n_en": "Waste Management", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Industrials", "ind": "固废处理", "ind_en": "Solid waste", "m": "区域垃圾处理/填埋场特许经营壁垒", "m_en": "Regional barriers around waste handling and landfill permits", "sc": 4, "dy": 0.014, "pe": 30.0, "beta": 0.8, "w": 0.01444}, {"t": "CVX", "n": "雪佛龙", "n_en": "Chevron", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Energy", "ind": "一体化石油天然气", "ind_en": "Integrated oil and gas", "m": "Buffett持仓,一体化能源龙头,资产负债表稳健", "m_en": "Buffett holding. Integrated energy major with a solid balance sheet", "sc": 4, "dy": 0.042, "pe": 14.0, "beta": 1.0, "w": 0.01444}, {"t": "OXY", "n": "西方石油", "n_en": "Occidental Petroleum", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Energy", "ind": "石油天然气开采", "ind_en": "Oil and gas production", "m": "Buffett重仓,二叠纪盆地低成本资源", "m_en": "Large Buffett position. Low-cost Permian Basin resources", "sc": 4, "dy": 0.018, "pe": 13.0, "beta": 1.5, "w": 0.01444}, {"t": "AMT", "n": "美国电塔", "n_en": "American Tower", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Real Estate", "ind": "通信铁塔REIT", "ind_en": "Communications tower REIT", "m": "通信铁塔基础设施收租模式,长期租约现金流(REIT,估值以FFO更合适)", "m_en": "Rent-collecting tower infrastructure with long leases (a REIT — FFO is the more appropriate valuation measure)", "sc": 3, "dy": 0.032, "pe": 40.0, "beta": 0.9, "w": 0.01083}, {"t": "GOOGL", "n": "谷歌/Alphabet", "n_en": "Alphabet (Google)", "c": "美国", "c_en": "United States", "x": "NASDAQ", "x_en": "NASDAQ", "cur": "USD", "s": "Communications", "ind": "搜索/广告/云", "ind_en": "Search / advertising / cloud", "m": "搜索垄断级护城河,Buffett近期新进持仓,2024年起首次分红", "m_en": "Monopoly-grade moat in search. A recent new Berkshire position; first dividend paid from 2024", "sc": 5, "dy": 0.004, "pe": 22.0, "beta": 1.05, "w": 0.018051}, {"t": "NEE", "n": "新纪元能源", "n_en": "NextEra Energy", "c": "美国", "c_en": "United States", "x": "NYSE", "x_en": "NYSE", "cur": "USD", "s": "Utilities", "ind": "受监管电力+新能源", "ind_en": "Regulated utility + renewables", "m": "受监管公用事业现金流+新能源龙头地位", "m_en": "Regulated utility cash flow plus a leading position in renewables", "sc": 3, "dy": 0.03, "pe": 20.0, "beta": 0.5, "w": 0.01083}, {"t": "CSU.TO", "n": "Constellation Software", "n_en": "Constellation Software", "c": "加拿大", "c_en": "Canada", "x": "TSX", "x_en": "TSX", "cur": "CAD", "s": "Technology", "ind": "垂直行业软件", "ind_en": "Vertical market software", "m": "并购整合垂直软件资产,长期复利典范(Mark Leonard式资本配置)", "m_en": "Acquires and consolidates vertical software assets; a model of long-term compounding (Mark Leonard-style capital allocation)", "sc": 4, "dy": 0.0025, "pe": 50.0, "beta": 0.9, "w": 0.01444}, {"t": "RY.TO", "n": "加拿大皇家银行", "n_en": "Royal Bank of Canada", "c": "加拿大", "c_en": "Canada", "x": "TSX", "x_en": "TSX", "cur": "CAD", "s": "Financials", "ind": "综合性银行", "ind_en": "Universal bank", "m": "加拿大寡头银行体系,监管壁垒极高", "m_en": "Canada's oligopolistic banking system, with very high regulatory barriers", "sc": 4, "dy": 0.035, "pe": 13.0, "beta": 0.9, "w": 0.01444}, {"t": "ATD.TO", "n": "Alimentation Couche-Tard", "n_en": "Alimentation Couche-Tard", "c": "加拿大", "c_en": "Canada", "x": "TSX", "x_en": "TSX", "cur": "CAD", "s": "Consumer Staples", "ind": "便利店", "ind_en": "Convenience stores", "m": "便利店行业整合者,资本配置纪律出色", "m_en": "The consolidator of the convenience store sector, with excellent capital allocation discipline", "sc": 3, "dy": 0.01, "pe": 18.0, "beta": 0.8, "w": 0.01083}, {"t": "QSR.TO", "n": "餐饮品牌国际", "n_en": "Restaurant Brands International", "c": "加拿大", "c_en": "Canada", "x": "TSX", "x_en": "TSX", "cur": "CAD", "s": "Consumer Discretionary", "ind": "餐饮特许经营", "ind_en": "Restaurant franchising", "m": "汉堡王/Tim Hortons/Popeyes特许经营组合(3G资本背景)", "m_en": "Burger King / Tim Hortons / Popeyes franchise portfolio (3G Capital heritage)", "sc": 2, "dy": 0.033, "pe": 19.0, "beta": 0.8, "w": 0.00722}, {"t": "CNR.TO", "n": "加拿大国家铁路", "n_en": "Canadian National Railway", "c": "加拿大", "c_en": "Canada", "x": "TSX", "x_en": "TSX", "cur": "CAD", "s": "Industrials", "ind": "货运铁路", "ind_en": "Freight rail", "m": "北美铁路双寡头之一,准入壁垒极高", "m_en": "The other half of the North American rail duopoly. Very high barriers to entry", "sc": 4, "dy": 0.02, "pe": 19.0, "beta": 0.8, "w": 0.01444}, {"t": "TRI", "n": "汤森路透", "n_en": "Thomson Reuters", "c": "加拿大", "c_en": "Canada", "x": "TSX/NYSE", "x_en": "TSX/NYSE", "cur": "CAD", "s": "Industrials", "ind": "专业信息与合规数据", "ind_en": "Professional information and compliance data", "m": "订阅制专业信息服务,客户粘性强(对标标普全球评级/数据逻辑)", "m_en": "Subscription professional information with strong customer stickiness (same logic as S&P Global's ratings and data)", "sc": 3, "dy": 0.013, "pe": 38.0, "beta": 0.7, "w": 0.01083}, {"t": "CNQ.TO", "n": "加拿大自然资源", "n_en": "Canadian Natural Resources", "c": "加拿大", "c_en": "Canada", "x": "TSX", "x_en": "TSX", "cur": "CAD", "s": "Energy", "ind": "油砂/常规油气", "ind_en": "Oil sands / conventional oil and gas", "m": "低成本长寿命油砂资源,自由现金流稳健", "m_en": "Low-cost, long-life oil sands reserves with steady free cash flow", "sc": 3, "dy": 0.045, "pe": 13.0, "beta": 1.3, "w": 0.01083}, {"t": "NTR.TO", "n": "加拿大Nutrien", "n_en": "Nutrien", "c": "加拿大", "c_en": "Canada", "x": "TSX/NYSE", "x_en": "TSX/NYSE", "cur": "CAD", "s": "Materials", "ind": "钾肥/农业投入品", "ind_en": "Potash / agricultural inputs", "m": "全球最大钾肥生产商,资源禀赋壁垒", "m_en": "The world's largest potash producer. Moat rests on resource endowment", "sc": 2, "dy": 0.038, "pe": 18.0, "beta": 1.0, "w": 0.00722}, {"t": "FTS.TO", "n": "Fortis Inc", "n_en": "Fortis Inc", "c": "加拿大", "c_en": "Canada", "x": "TSX/NYSE", "x_en": "TSX/NYSE", "cur": "CAD", "s": "Utilities", "ind": "受监管电力/燃气", "ind_en": "Regulated electricity / gas", "m": "50年连续股息增长记录,受监管公用事业现金流", "m_en": "Fifty consecutive years of dividend growth, on regulated utility cash flow", "sc": 3, "dy": 0.039, "pe": 18.0, "beta": 0.3, "w": 0.01083}, {"t": "HSBA.L", "n": "汇丰控股", "n_en": "HSBC Holdings", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Financials", "ind": "全球银行", "ind_en": "Global banking", "m": "全球贸易融资网络,亚洲业务敞口", "m_en": "Global trade finance network with substantial Asian exposure", "sc": 3, "dy": 0.055, "pe": 9.0, "beta": 1.0, "w": 0.01083}, {"t": "DGE.L", "n": "帝亚吉欧", "n_en": "Diageo", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Consumer Staples", "ind": "烈酒", "ind_en": "Spirits", "m": "烈酒品牌矩阵,提价能力强", "m_en": "A portfolio of spirits brands with strong pricing power", "sc": 4, "dy": 0.038, "pe": 17.0, "beta": 0.7, "w": 0.01444}, {"t": "ULVR.L", "n": "联合利华", "n_en": "Unilever", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Consumer Staples", "ind": "日用消费品", "ind_en": "Household consumer goods", "m": "全球日用消费品品牌矩阵", "m_en": "Global portfolio of household consumer brands", "sc": 3, "dy": 0.033, "pe": 19.0, "beta": 0.6, "w": 0.01083}, {"t": "AZN.L", "n": "阿斯利康", "n_en": "AstraZeneca", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Health Care", "ind": "创新药", "ind_en": "Innovative pharmaceuticals", "m": "肿瘤/罕见病管线专利护城河", "m_en": "Patent moat across the oncology and rare disease pipeline", "sc": 4, "dy": 0.02, "pe": 30.0, "beta": 0.5, "w": 0.01444}, {"t": "BA.L", "n": "BAE系统公司", "n_en": "BAE Systems", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Industrials", "ind": "国防装备", "ind_en": "Defence equipment", "m": "英美长期国防合约,政府客户粘性(相对Buffett传统偏好的适度放宽)", "m_en": "Long-running UK and US defence contracts with sticky government customers (a moderate relaxation of Buffett's traditional preferences)", "sc": 3, "dy": 0.021, "pe": 22.0, "beta": 0.8, "w": 0.01083}, {"t": "RIO.L", "n": "力拓集团", "n_en": "Rio Tinto", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Materials", "ind": "多元矿业", "ind_en": "Diversified mining", "m": "低成本铁矿石资源禀赋壁垒", "m_en": "Low-cost iron ore resource endowment", "sc": 2, "dy": 0.06, "pe": 9.0, "beta": 1.1, "w": 0.00722}, {"t": "SGRO.L", "n": "Segro Plc", "n_en": "Segro Plc", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Real Estate", "ind": "物流地产REIT", "ind_en": "Logistics property REIT", "m": "电商结构性增长受益的物流地产(REIT,估值以FFO更合适)", "m_en": "Logistics property benefiting from structural growth in e-commerce (a REIT — FFO is the more appropriate valuation measure)", "sc": 2, "dy": 0.038, "pe": 20.0, "beta": 0.9, "w": 0.00722}, {"t": "NG.L", "n": "国家电网", "n_en": "National Grid", "c": "英国", "c_en": "United Kingdom", "x": "LSE", "x_en": "LSE", "cur": "GBP", "s": "Utilities", "ind": "受监管输配电", "ind_en": "Regulated transmission and distribution", "m": "输配电网络垄断特许经营权", "m_en": "Monopoly franchise over transmission and distribution networks", "sc": 3, "dy": 0.048, "pe": 15.0, "beta": 0.5, "w": 0.01083}, {"t": "ARM", "n": "Arm Holdings", "n_en": "Arm Holdings", "c": "英国", "c_en": "United Kingdom", "x": "NASDAQ", "x_en": "NASDAQ", "cur": "USD", "s": "Technology", "ind": "芯片架构IP", "ind_en": "Chip architecture IP", "m": "移动芯片架构近垄断级授权模式,产业链chokepoint(估值偏高,风险需关注);英国公司但以ADS形式在纳斯达克以美元交易,故计价货币为USD", "m_en": "Near-monopoly licensing model for mobile chip architecture; a chokepoint in the supply chain (valuation is rich — watch the risk). A UK company, but trades as ADSs in US dollars on Nasdaq, hence USD", "sc": 3, "dy": 0.0, "pe": 70.0, "beta": 1.5, "w": 0.01083}, {"t": "RMS.PA", "n": "爱马仕", "n_en": "Hermès", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Consumer Discretionary", "ind": "奢侈品", "ind_en": "Luxury goods", "m": "极致稀缺性驱动的定价权,几乎不打折的品牌护城河", "m_en": "Pricing power driven by extreme scarcity; a brand that essentially never discounts", "sc": 4, "dy": 0.008, "pe": 45.0, "beta": 1.0, "w": 0.01444}, {"t": "MC.PA", "n": "LVMH", "n_en": "LVMH", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Consumer Discretionary", "ind": "奢侈品集团", "ind_en": "Luxury goods group", "m": "多品牌奢侈品矩阵,规模与渠道优势", "m_en": "Multi-brand luxury portfolio with scale and distribution advantages", "sc": 3, "dy": 0.02, "pe": 22.0, "beta": 1.0, "w": 0.01083}, {"t": "OR.PA", "n": "欧莱雅", "n_en": "L'Oréal", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Consumer Staples", "ind": "美妆", "ind_en": "Beauty", "m": "全球美妆品类龙头,研发与渠道双重护城河", "m_en": "Global category leader in beauty, with a double moat of R&D and distribution", "sc": 4, "dy": 0.017, "pe": 30.0, "beta": 0.7, "w": 0.01444}, {"t": "RI.PA", "n": "保乐力加", "n_en": "Pernod Ricard", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Consumer Staples", "ind": "烈酒", "ind_en": "Spirits", "m": "全球烈酒品牌组合(近年新兴市场需求波动需关注)", "m_en": "Global spirits brand portfolio (recent emerging-market demand volatility worth watching)", "sc": 2, "dy": 0.03, "pe": 16.0, "beta": 0.8, "w": 0.00722}, {"t": "SAN.PA", "n": "赛诺菲", "n_en": "Sanofi", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Health Care", "ind": "制药/疫苗", "ind_en": "Pharmaceuticals / vaccines", "m": "疫苗+专科药物专利组合", "m_en": "Patent portfolio across vaccines and specialty medicines", "sc": 3, "dy": 0.035, "pe": 13.0, "beta": 0.6, "w": 0.01083}, {"t": "SU.PA", "n": "施耐德电气", "n_en": "Schneider Electric", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Industrials", "ind": "电气化/能效设备", "ind_en": "Electrification / energy efficiency equipment", "m": "电气化与能效设备装机基础护城河,长期结构性需求", "m_en": "Installed base of electrification and energy-efficiency equipment, meeting long-term structural demand", "sc": 4, "dy": 0.018, "pe": 28.0, "beta": 1.0, "w": 0.01444}, {"t": "TTE.PA", "n": "道达尔能源", "n_en": "TotalEnergies", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Energy", "ind": "一体化能源", "ind_en": "Integrated energy", "m": "一体化能源龙头,资产负债表稳健", "m_en": "Integrated energy major with a solid balance sheet", "sc": 3, "dy": 0.055, "pe": 9.0, "beta": 1.0, "w": 0.01083}, {"t": "AI.PA", "n": "液化空气集团", "n_en": "Air Liquide", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Materials", "ind": "工业气体", "ind_en": "Industrial gases", "m": "工业气体管网基础设施,客户转换成本极高", "m_en": "Industrial gas pipeline infrastructure, with extremely high customer switching costs", "sc": 4, "dy": 0.017, "pe": 28.0, "beta": 0.7, "w": 0.01444}, {"t": "DSY.PA", "n": "达索系统", "n_en": "Dassault Systèmes", "c": "法国", "c_en": "France", "x": "Euronext Paris", "x_en": "Euronext Paris", "cur": "EUR", "s": "Technology", "ind": "工程仿真软件", "ind_en": "Engineering simulation software", "m": "工程仿真/PLM软件高粘性,订阅制收入", "m_en": "Highly sticky engineering simulation and PLM software on subscription revenue", "sc": 3, "dy": 0.006, "pe": 35.0, "beta": 1.0, "w": 0.01083}, {"t": "SAP", "n": "思爱普", "n_en": "SAP", "c": "德国", "c_en": "Germany", "x": "XETRA", "x_en": "XETRA", "cur": "EUR", "s": "Technology", "ind": "企业ERP软件", "ind_en": "Enterprise ERP software", "m": "企业ERP系统转换成本极高,云转型进展顺利", "m_en": "Extremely high switching costs for enterprise ERP, with the cloud transition going well", "sc": 4, "dy": 0.01, "pe": 35.0, "beta": 0.9, "w": 0.01444}, {"t": "ALV.DE", "n": "安联", "n_en": "Allianz", "c": "德国", "c_en": "Germany", "x": "XETRA", "x_en": "XETRA", "cur": "EUR", "s": "Financials", "ind": "保险/资管", "ind_en": "Insurance / asset management", "m": "欧洲最大保险集团之一,浮存金逻辑近似Buffett偏好", "m_en": "One of Europe's largest insurers; the float logic is close to Buffett's preference", "sc": 3, "dy": 0.042, "pe": 13.0, "beta": 0.9, "w": 0.01083}, {"t": "DB1.DE", "n": "德意志交易所", "n_en": "Deutsche Börse", "c": "德国", "c_en": "Germany", "x": "XETRA", "x_en": "XETRA", "cur": "EUR", "s": "Financials", "ind": "交易所基础设施", "ind_en": "Exchange infrastructure", "m": "交易所/清算基础设施,近似收费站商业模式", "m_en": "Exchange and clearing infrastructure — close to a toll-booth business model", "sc": 3, "dy": 0.025, "pe": 24.0, "beta": 0.8, "w": 0.01083}, {"t": "SIE.DE", "n": "西门子", "n_en": "Siemens", "c": "德国", "c_en": "Germany", "x": "XETRA", "x_en": "XETRA", "cur": "EUR", "s": "Industrials", "ind": "多元工业技术", "ind_en": "Diversified industrial technology", "m": "多元工业技术集团,自动化与基建业务组合", "m_en": "Diversified industrial technology group combining automation and infrastructure", "sc": 3, "dy": 0.018, "pe": 22.0, "beta": 1.1, "w": 0.01083}, {"t": "BAS.DE", "n": "巴斯夫", "n_en": "BASF", "c": "德国", "c_en": "Germany", "x": "XETRA", "x_en": "XETRA", "cur": "EUR", "s": "Materials", "ind": "综合化工", "ind_en": "Diversified chemicals", "m": "一体化化工生产网络(Verbund),周期性较强(适度放宽项)", "m_en": "Integrated chemical production network (Verbund); noticeably cyclical (a moderate relaxation)", "sc": 2, "dy": 0.055, "pe": 16.0, "beta": 1.1, "w": 0.00722}, {"t": "DTE.DE", "n": "德国电信", "n_en": "Deutsche Telekom", "c": "德国", "c_en": "Germany", "x": "XETRA", "x_en": "XETRA", "cur": "EUR", "s": "Communications", "ind": "电信运营", "ind_en": "Telecommunications", "m": "控股T-Mobile美国,用户黏性与规模效应", "m_en": "Controls T-Mobile US; subscriber stickiness and scale effects", "sc": 2, "dy": 0.028, "pe": 17.0, "beta": 0.6, "w": 0.00722}, {"t": "ASML", "n": "阿斯麦", "n_en": "ASML", "c": "荷兰", "c_en": "Netherlands", "x": "Euronext Amsterdam", "x_en": "Euronext Amsterdam", "cur": "EUR", "s": "Technology", "ind": "半导体设备", "ind_en": "Semiconductor equipment", "m": "EUV光刻机全球独家供应商,半导体产业链关键节点(用户示例中的激进放宽项)", "m_en": "Sole global supplier of EUV lithography machines; a critical node in the semiconductor supply chain (the aggressive relaxation from the original brief)", "sc": 6, "dy": 0.008, "pe": 32.0, "beta": 1.3, "w": 0.021661}, {"t": "HEIA.AS", "n": "喜力", "n_en": "Heineken", "c": "荷兰", "c_en": "Netherlands", "x": "Euronext Amsterdam", "x_en": "Euronext Amsterdam", "cur": "EUR", "s": "Consumer Staples", "ind": "啤酒", "ind_en": "Brewing", "m": "全球啤酒品牌组合,家族治理结构稳定", "m_en": "Global beer brand portfolio with stable family governance", "sc": 3, "dy": 0.018, "pe": 18.0, "beta": 0.7, "w": 0.01083}, {"t": "WKL.AS", "n": "威科集团", "n_en": "Wolters Kluwer", "c": "荷兰", "c_en": "Netherlands", "x": "Euronext Amsterdam", "x_en": "Euronext Amsterdam", "cur": "EUR", "s": "Industrials", "ind": "监管合规信息服务", "ind_en": "Regulatory and compliance information", "m": "法律/税务/医疗合规信息订阅护城河", "m_en": "Subscription moat in legal, tax and medical compliance information", "sc": 3, "dy": 0.012, "pe": 28.0, "beta": 0.7, "w": 0.01083}, {"t": "NESN.SW", "n": "雀巢", "n_en": "Nestlé", "c": "瑞士", "c_en": "Switzerland", "x": "SIX", "x_en": "SIX", "cur": "CHF", "s": "Consumer Staples", "ind": "食品饮料", "ind_en": "Food and beverage", "m": "全球最大食品饮料集团,品牌矩阵极其广泛(用户自身持仓)", "m_en": "The world's largest food and beverage group, with an exceptionally broad brand portfolio (a position the owner already holds)", "sc": 5, "dy": 0.033, "pe": 19.0, "beta": 0.5, "w": 0.018051}, {"t": "RO.SW", "n": "罗氏", "n_en": "Roche", "c": "瑞士", "c_en": "Switzerland", "x": "SIX", "x_en": "SIX", "cur": "CHF", "s": "Health Care", "ind": "制药/诊断", "ind_en": "Pharmaceuticals / diagnostics", "m": "肿瘤/诊断领域专利护城河,诊断业务协同(RO.SW 为SIX记名股;参与证书ROP.SW为不同证券,成本价请勿混填)", "m_en": "Patent moat in oncology and diagnostics, with synergy between the two (RO.SW is the SIX registered share; the ROP.SW participation certificate is a different security — do not mix cost basis between them)", "sc": 4, "dy": 0.038, "pe": 16.0, "beta": 0.5, "w": 0.01444}, {"t": "NOVN.SW", "n": "诺华", "n_en": "Novartis", "c": "瑞士", "c_en": "Switzerland", "x": "SIX", "x_en": "SIX", "cur": "CHF", "s": "Health Care", "ind": "创新药", "ind_en": "Innovative pharmaceuticals", "m": "创新药专利管线,聚焦核心治疗领域后估值重估", "m_en": "Patented drug pipeline, re-rated after refocusing on core therapeutic areas", "sc": 4, "dy": 0.035, "pe": 14.0, "beta": 0.6, "w": 0.01444}, {"t": "UBSG.SW", "n": "瑞银集团", "n_en": "UBS Group", "c": "瑞士", "c_en": "Switzerland", "x": "SIX", "x_en": "SIX", "cur": "CHF", "s": "Financials", "ind": "财富管理/投行", "ind_en": "Wealth management / investment banking", "m": "瑞士财富管理龙头,整合瑞信后规模效应扩大(整合执行风险需关注)", "m_en": "Swiss wealth management leader, with scale extended by the Credit Suisse integration (execution risk worth watching)", "sc": 2, "dy": 0.028, "pe": 13.0, "beta": 1.1, "w": 0.00722}, {"t": "ZURN.SW", "n": "苏黎世保险", "n_en": "Zurich Insurance", "c": "瑞士", "c_en": "Switzerland", "x": "SIX", "x_en": "SIX", "cur": "CHF", "s": "Financials", "ind": "保险", "ind_en": "Insurance", "m": "保险浮存金逻辑,资本配置纪律良好", "m_en": "Insurance float logic with good capital allocation discipline", "sc": 3, "dy": 0.045, "pe": 13.0, "beta": 0.7, "w": 0.01083}, {"t": "ABBN.SW", "n": "ABB", "n_en": "ABB", "c": "瑞士", "c_en": "Switzerland", "x": "SIX", "x_en": "SIX", "cur": "CHF", "s": "Industrials", "ind": "电气化/工业自动化", "ind_en": "Electrification / industrial automation", "m": "电气化与工业自动化设备,长期电气化趋势受益", "m_en": "Electrification and industrial automation equipment, benefiting from the long-term electrification trend", "sc": 3, "dy": 0.022, "pe": 24.0, "beta": 1.0, "w": 0.01083}, {"t": "8035.T", "n": "东京电子", "n_en": "Tokyo Electron", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Technology", "ind": "半导体设备", "ind_en": "Semiconductor equipment", "m": "半导体前道设备寡头之一,产业链关键节点", "m_en": "One of the front-end semiconductor equipment oligopoly; a critical node in the supply chain", "sc": 4, "dy": 0.015, "pe": 28.0, "beta": 1.2, "w": 0.01444}, {"t": "6861.T", "n": "基恩士", "n_en": "Keyence", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Technology", "ind": "工业传感器/自动化", "ind_en": "Industrial sensors / automation", "m": "工业传感器/机器视觉高毛利率,轻资产直销模式", "m_en": "Very high margins in industrial sensors and machine vision, on an asset-light direct sales model", "sc": 4, "dy": 0.006, "pe": 35.0, "beta": 1.0, "w": 0.01444}, {"t": "7741.T", "n": "豪雅", "n_en": "Hoya", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Technology", "ind": "光掩膜基板/精密光学", "ind_en": "Photomask blanks / precision optics", "m": "半导体光掩膜基板与硬盘玻璃基板利基垄断", "m_en": "Niche monopoly in semiconductor photomask blanks and hard disk glass substrates", "sc": 3, "dy": 0.01, "pe": 30.0, "beta": 0.8, "w": 0.01083}, {"t": "8766.T", "n": "东京海上控股", "n_en": "Tokio Marine Holdings", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Financials", "ind": "保险", "ind_en": "Insurance", "m": "日本保险业龙头,浮存金逻辑", "m_en": "Japan's leading insurer; the float logic again", "sc": 3, "dy": 0.03, "pe": 16.0, "beta": 0.7, "w": 0.01083}, {"t": "4568.T", "n": "第一三共", "n_en": "Daiichi Sankyo", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Health Care", "ind": "创新药/ADC", "ind_en": "Innovative pharmaceuticals / ADC", "m": "抗体偶联药物(ADC)技术授权管线,全球license-out收入", "m_en": "Antibody-drug conjugate (ADC) technology pipeline, with global licensing-out revenue", "sc": 2, "dy": 0.013, "pe": 45.0, "beta": 0.7, "w": 0.00722}, {"t": "8001.T", "n": "伊藤忠商事", "n_en": "Itochu", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Industrials", "ind": "综合商社", "ind_en": "General trading house", "m": "Buffett/Berkshire实际持仓的五大商社之一,业务组合多元化", "m_en": "One of the five trading houses Berkshire actually holds; a diversified business mix", "sc": 3, "dy": 0.028, "pe": 11.0, "beta": 0.9, "w": 0.01083}, {"t": "8058.T", "n": "三菱商事", "n_en": "Mitsubishi Corporation", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Industrials", "ind": "综合商社", "ind_en": "General trading house", "m": "Buffett/Berkshire实际持仓的五大商社之一,资源+贸易组合", "m_en": "One of the five trading houses Berkshire actually holds; combines resources and trading", "sc": 3, "dy": 0.032, "pe": 10.0, "beta": 0.9, "w": 0.01083}, {"t": "7974.T", "n": "任天堂", "n_en": "Nintendo", "c": "日本", "c_en": "Japan", "x": "TSE", "x_en": "TSE", "cur": "JPY", "s": "Communications", "ind": "游戏/娱乐IP", "ind_en": "Gaming / entertainment IP", "m": "独特游戏IP护城河,现金充裕且几乎零负债", "m_en": "A distinctive moat in game IP; cash rich with almost no debt", "sc": 3, "dy": 0.015, "pe": 22.0, "beta": 0.8, "w": 0.01083}, {"t": "ABI.BR", "n": "百威英博", "n_en": "Anheuser-Busch InBev", "c": "比利时", "c_en": "Belgium", "x": "Euronext Brussels", "x_en": "Euronext Brussels", "cur": "EUR", "s": "Consumer Staples", "ind": "啤酒", "ind_en": "Brewing", "m": "全球最大啤酒集团,品牌矩阵(百威/科罗娜/时代等)+全球分销网络规模效应;SABMiller并购后杠杆一度偏高,近年持续去杠杆,现金流改善", "m_en": "The world's largest brewer: brand portfolio (Budweiser, Corona, Stella and others) plus scale in global distribution. Leverage ran high after the SABMiller acquisition but has been coming down steadily, with improving cash flow", "sc": 3, "dy": 0.013, "pe": 18.0, "beta": 0.8, "w": 0.01083}, {"t": "RACE.MI", "n": "法拉利", "n_en": "Ferrari", "c": "意大利", "c_en": "Italy", "x": "Borsa Italiana/NYSE", "x_en": "Borsa Italiana/NYSE", "cur": "EUR", "s": "Consumer Discretionary", "ind": "豪华跑车", "ind_en": "Luxury sports cars", "m": "严格控产驱动的极致稀缺性与定价权,行业最高毛利率,逻辑近似爱马仕但估值更高;注:控股主体Ferrari N.V.注册于荷兰,品牌/总部/研发与生产核心均在意大利马拉内罗,按此归类意大利", "m_en": "Extreme scarcity and pricing power from strictly controlled production, with the highest margins in the industry. Similar logic to Hermès but at a richer valuation. Note: the holding company Ferrari N.V. is registered in the Netherlands, while the brand, headquarters, R&D and production all centre on Maranello, Italy — classified as Italian on that basis", "sc": 4, "dy": 0.007, "pe": 48.0, "beta": 1.0, "w": 0.01444}, {"t": "G.MI", "n": "忠利保险", "n_en": "Generali", "c": "意大利", "c_en": "Italy", "x": "Borsa Italiana", "x_en": "Borsa Italiana", "cur": "EUR", "s": "Financials", "ind": "保险", "ind_en": "Insurance", "m": "意大利/欧洲主要保险集团之一,浮存金逻辑与巴菲特偏好契合;意大利主权风险溢价与历史欧债包袱需关注,故信心分适度保守", "m_en": "One of the major Italian and European insurers; float logic fits Buffett's preference. Italian sovereign risk premium and the legacy of the euro debt crisis are worth watching, hence the deliberately conservative confidence score", "sc": 2, "dy": 0.048, "pe": 11.0, "beta": 0.9, "w": 0.00722}, {"t": "NOVO-B.CO", "n": "诺和诺德", "n_en": "Novo Nordisk", "c": "丹麦", "c_en": "Denmark", "x": "Nasdaq Copenhagen", "x_en": "Nasdaq Copenhagen", "cur": "DKK", "s": "Health Care", "ind": "糖尿病/减重药物", "ind_en": "Diabetes / weight-loss drugs", "m": "GLP-1类降糖/减重药物全球龙头(Ozempic/Wegovy),制造规模与专利先发优势构筑护城河;2024-2025年因礼来等竞争加剧及部分临床数据不及预期,估值已从高位大幅回落,波动性需关注", "m_en": "Global leader in GLP-1 diabetes and weight-loss drugs (Ozempic, Wegovy). Moat built on manufacturing scale and patent lead. Valuation has fallen sharply from its highs through 2024-2025 on intensifying competition from Eli Lilly and some clinical data below expectations — volatility worth watching", "sc": 4, "dy": 0.02, "pe": 24.0, "beta": 1.1, "w": 0.01444}, {"t": "CRH", "n": "CRH建材集团", "n_en": "CRH", "c": "爱尔兰", "c_en": "Ireland", "x": "NYSE(原都柏林)", "x_en": "NYSE (formerly Dublin)", "cur": "USD", "s": "Materials", "ind": "建材/骨料", "ind_en": "Building materials / aggregates", "m": "全球最大建材与骨料公司之一,区域采石场资源与许可壁垒形成天然区域性护城河;起家于爱尔兰,2023年将主要上市地迁至纽约证交所", "m_en": "One of the world's largest building materials and aggregates companies. Regional quarry resources and permitting barriers create a naturally local moat. Founded in Ireland; moved its primary listing to the New York Stock Exchange in 2023", "sc": 3, "dy": 0.014, "pe": 18.0, "beta": 1.0, "w": 0.01083}, {"t": "KRZ.IR", "n": "凯瑞集团", "n_en": "Kerry Group", "c": "爱尔兰", "c_en": "Ireland", "x": "Euronext Dublin", "x_en": "Euronext Dublin", "cur": "EUR", "s": "Consumer Staples", "ind": "食品配料/风味科技", "ind_en": "Food ingredients / taste technology", "m": "全球领先食品配料与风味科技公司,深度嵌入客户产品配方研发流程,转换成本高,近似隐形冠军型护城河", "m_en": "A world leader in food ingredients and taste technology, embedded deep in customers' product formulation and R&D processes. High switching costs — a hidden-champion style moat", "sc": 3, "dy": 0.015, "pe": 22.0, "beta": 0.7, "w": 0.01083}];
 // Maps the raw exchange string in DATA to a clean display name and, where I could
 // independently verify it (checked against IBKR's own docs and real user symbol
 // maps, not guessed), the code IBKR itself uses — which is often NOT the exchange's
@@ -704,6 +691,26 @@ function rebuildEffectiveData(){
 
 const SECTOR_ZH = {"Financials": "金融 Financials", "Technology": "科技 Technology", "Industrials": "工业 Industrials", "Consumer Staples": "必需消费 Cons. Staples", "Health Care": "医疗保健 Health Care", "Consumer Discretionary": "可选消费 Cons. Discretionary", "Energy": "能源 Energy", "Communications": "通讯服务 Communications", "Materials": "原材料 Materials", "Utilities": "公用事业 Utilities", "Real Estate": "房地产 Real Estate"};
 const SECTOR_ORDER = ["Financials", "Technology", "Industrials", "Consumer Staples", "Health Care", "Consumer Discretionary", "Energy", "Communications", "Materials", "Utilities", "Real Estate"];
+// English by default. A stored choice wins; otherwise the browser's own
+// preference decides, so a Chinese-locale visitor is not made to switch by hand.
+let LANG = I18N.resolve(
+  localStorage.getItem('hh_lang') || (navigator.language || 'en'));
+const t = (key, vars) => I18N.t(key, LANG, vars);
+
+// Raw Chinese values stay the lookup KEYS everywhere (COUNTRY_COLOR, filters,
+// aggregation), and only what the reader sees is translated. Mixing the two up
+// is how a language switch silently breaks a filter.
+const COUNTRY_EN = {}, EXCH_EN = {};
+DATA.forEach(d => { COUNTRY_EN[d.c] = d.c_en; EXCH_EN[d.x] = d.x_en; });
+
+const dispName    = d => LANG === 'zh' ? d.n   : (d.n_en   || d.n);
+const dispCountry = c => LANG === 'zh' ? c     : (COUNTRY_EN[c] || c);
+const dispInd     = d => LANG === 'zh' ? d.ind : (d.ind_en || d.ind);
+const dispMoat    = d => LANG === 'zh' ? d.m   : (d.m_en   || d.m);
+const dispExch    = x => LANG === 'zh' ? exchInfo(x).name : (EXCH_EN[x] || x);
+const sectorLabel = s => LANG === 'zh' ? (SECTOR_ZH[s] || s) : s;
+const sectorShort = s => LANG === 'zh' ? (SECTOR_ZH[s] || s).split(' ')[0] : s;
+
 const COUNTRY_ORDER = ["美国", "法国", "加拿大", "英国", "日本", "瑞士", "德国", "荷兰", "意大利", "爱尔兰", "丹麦", "比利时"];
 const SECTOR_COLOR = {"Financials": "#C9A24B", "Technology": "#4FA89B", "Industrials": "#B8674D", "Consumer Staples": "#5B84A6", "Health Care": "#8C97A8", "Consumer Discretionary": "#7A9E7E", "Energy": "#A67C9E", "Communications": "#9C8555", "Materials": "#6E8B74", "Utilities": "#B08BA0", "Real Estate": "#6B7FA6"};
 const COUNTRY_COLOR = {"美国": "#C9A24B", "法国": "#4FA89B", "加拿大": "#B8674D", "英国": "#5B84A6", "日本": "#8C97A8", "瑞士": "#7A9E7E", "德国": "#A67C9E", "荷兰": "#9C8555", "意大利": "#6E8B74", "爱尔兰": "#B08BA0", "丹麦": "#6B7FA6", "比利时": "#D4B483"};
@@ -734,7 +741,7 @@ function renderTicker(){
       return `<span><span class="tk">${d.t}</span> <span class="wt">${priceStr}</span>${chgHtml}</span>`;
     }
     // fallback: no live price yet (backend not connected, or first run before any fetch)
-    return `<span><span class="tk">${d.t}</span> ${d.n} <span class="wt">${fmtPct(d.w)}</span></span>`;
+    return `<span><span class="tk">${d.t}</span> ${dispName(d)} <span class="wt">${fmtPct(d.w)}</span></span>`;
   }).join('');
   document.getElementById('tickerTrack').innerHTML = frag + frag; // duplicate for seamless loop
 }
@@ -767,18 +774,18 @@ function renderKPIs(){
   const peForwardN = src.filter(d => d._peType==='forward').length;
   const peMixed = peLiveN && peTrailingN && peForwardN;
   const peSub = peLiveN
-    ? `${peLiveN}/${n} 支实时(静态${peTrailingN}/动态${peForwardN})` + (peMixed ? ',混合口径仅供参考' : '')
-    : '较简单加权更严谨口径(静态估算)';
-  const dySub = dyLiveN ? `${dyLiveN}/${n} 支为实时数据` : '按权重加权平均(近似估算)';
-  const betaSub = betaLiveN ? `${betaLiveN}/${n} 支为实时数据` : '系统性风险代理指标(近似估算)';
+    ? t('kpi.peLive', {live: peLiveN, n: n, tr: peTrailingN, fw: peForwardN}) + (peMixed ? t('kpi.mixed') : '')
+    : t('kpi.peStatic');
+  const dySub = dyLiveN ? t('kpi.dyLive', {live: dyLiveN, n: n}) : t('kpi.dyEstimate');
+  const betaSub = betaLiveN ? t('kpi.betaLive', {live: betaLiveN, n: n}) : t('kpi.betaEstimate');
 
   const kpis = [
-    ['持仓数量 Holdings', n, `权重合计 ${fmtPct(wSum)}`],
-    ['加权股息率 Div. Yield', fmtPct(divY), dySub],
-    ['调和加权 P/E', fmtNum(harmPE)+'x', peSub],
-    ['加权 Beta', fmtNum(beta,2), betaSub],
-    ['CAPM 预期回报', fmtPct(expRet,1), `rf 4.6% + β×ERP 4.5%`],
-    ['有效持仓数', fmtNum(effN,1), `HHI = ${fmtPct(hhi,2)}`],
+    [t('kpi.holdings'), n, t('kpi.weightSum', {v: fmtPct(wSum)})],
+    [t('kpi.divYield'), fmtPct(divY), dySub],
+    [t('kpi.pe'), fmtNum(harmPE)+'x', peSub],
+    [t('kpi.beta'), fmtNum(beta,2), betaSub],
+    [t('kpi.capm'), fmtPct(expRet,1), t('kpi.capmSub')],
+    [t('kpi.effN'), fmtNum(effN,1), `HHI = ${fmtPct(hhi,2)}`],
   ];
   const row = document.getElementById('kpiRow');
   row.innerHTML = kpis.map(([label,val,sub]) => `
@@ -803,7 +810,7 @@ const countryAgg = aggregate('c', COUNTRY_ORDER);
 new Chart(document.getElementById('sectorChart'), {
   type: 'bar',
   data: {
-    labels: sectorAgg.map(d => SECTOR_ZH[d.label]),
+    labels: sectorAgg.map(d => sectorLabel(d.label)),
     datasets: [{
       data: sectorAgg.map(d => +(d.value*100).toFixed(2)),
       backgroundColor: sectorAgg.map(d => SECTOR_COLOR[d.label]),
@@ -826,7 +833,7 @@ new Chart(document.getElementById('sectorChart'), {
 new Chart(document.getElementById('countryChart'), {
   type: 'bar',
   data: {
-    labels: countryAgg.map(d => d.label),
+    labels: countryAgg.map(d => dispCountry(d.label)),
     datasets: [{
       data: countryAgg.map(d => +(d.value*100).toFixed(2)),
       backgroundColor: countryAgg.map(d => COUNTRY_COLOR[d.label]),
@@ -855,7 +862,7 @@ function renderValueMap(){
     bySector[d.s].push({ x: d.pe, y: +(d.dy*100).toFixed(2), r: Math.max(5, d.w*100*8), _d: d });
   });
   const bubbleDatasets = SECTOR_ORDER.filter(s => bySector[s]).map(s => ({
-    label: SECTOR_ZH[s].split(' ')[0],
+    label: sectorShort(s),
     data: bySector[s],
     backgroundColor: SECTOR_COLOR[s] + 'B3',
     borderColor: SECTOR_COLOR[s],
@@ -874,17 +881,17 @@ function renderValueMap(){
           callbacks: {
             label: (ctx) => {
               const d = ctx.raw._d;
-              const peTag = d._peLive ? ` · 实时(${peTypeLabel(d._peType)}PE)` : ' · 估算';
-              const dyTag = d._dyLive ? ' · 实时' : ' · 估算';
-              return [` ${d.t} · ${d.n}`,
-                      ` P/E ${d.pe}x${peTag} · 股息率 ${(d.dy*100).toFixed(1)}%${dyTag} · 权重 ${(d.w*100).toFixed(2)}%`];
+              const peTag = d._peLive ? t('vm.livePe', {type: peTypeLabel(d._peType)}) : t('vm.est');
+              const dyTag = d._dyLive ? t('vm.live') : t('vm.est');
+              return [` ${d.t} · ${dispName(d)}`,
+                      t('vm.tag', {pe: d.pe, peTag: peTag, dy: (d.dy*100).toFixed(1), dyTag: dyTag, w: (d.w*100).toFixed(2)})];
             }
           }
         }
       },
       scales: {
         x: { title: { display: true, text: 'P/E (x)', color:'#96A0AE', font:{size:11} }, grid: { color: '#1B222C' } },
-        y: { title: { display: true, text: '股息率 %', color:'#96A0AE', font:{size:11} }, grid: { color: '#1B222C' } }
+        y: { title: { display: true, text: t('axis.divYield'), color:'#96A0AE', font:{size:11} }, grid: { color: '#1B222C' } }
       }
     }
   });
@@ -901,22 +908,22 @@ const resultCount = document.getElementById('resultCount');
 
 SECTOR_ORDER.forEach(s => {
   const o = document.createElement('option');
-  o.value = s; o.textContent = SECTOR_ZH[s];
+  o.value = s; o.textContent = sectorLabel(s);
   sectorFilter.appendChild(o);
 });
 COUNTRY_ORDER.forEach(c => {
   const o = document.createElement('option');
-  o.value = c; o.textContent = c;
+  o.value = c; o.textContent = dispCountry(c);
   countryFilter.appendChild(o);
 });
 // Options built from the exchange codes actually present in DATA, grouped by
 // display name (e.g. all "TSX/NYSE" and "TSX" tickers collapse into one entry)
 // and ordered by how many tickers use each, most first.
 Object.entries(
-  DATA.reduce((acc,d) => { const n = exchInfo(d.x).name; acc[n] = (acc[n]||0)+1; return acc; }, {})
+  DATA.reduce((acc,d) => { acc[d.x] = (acc[d.x]||0)+1; return acc; }, {})
 ).sort((a,b) => b[1]-a[1]).forEach(([name,n]) => {
   const o = document.createElement('option');
-  o.value = name; o.textContent = `${name} (${n})`;
+  o.value = name; o.textContent = `${dispExch(name)} (${n})`;
   exchFilter.appendChild(o);
 });
 
@@ -928,8 +935,8 @@ function applyFiltersAndRender(){
   let rows = EFFECTIVE_DATA.filter(d => {
     if(sf && d.s !== sf) return false;
     if(cf && d.c !== cf) return false;
-    if(xf && exchInfo(d.x).name !== xf) return false;
-    if(q && !(d.t.toLowerCase().includes(q) || d.n.toLowerCase().includes(q))) return false;
+    if(xf && d.x !== xf) return false;
+    if(q && !(d.t.toLowerCase().includes(q) || String(dispName(d)).toLowerCase().includes(q) || d.n.toLowerCase().includes(q))) return false;
     return true;
   });
   rows.sort((a,b) => {
@@ -939,26 +946,26 @@ function applyFiltersAndRender(){
     if(av > bv) return 1*sortDir;
     return 0;
   });
-  resultCount.textContent = `${rows.length} / ${DATA.length} 支个股`;
+  resultCount.textContent = t('filter.count', {n: rows.length, total: DATA.length});
   tbody.innerHTML = rows.map(d => {
     const ex = exchInfo(d.x);
     const ibkrBadge = ex.ibkr
-      ? `<span class="ibkr-code" title="IBKR交易所代码(已核实)">${ex.ibkr}</span>`
-      : `<span class="ibkr-code unverified" title="未能核实IBKR专用代码,请在IBKR内用代码或ISIN搜索确认">未核实</span>`;
+      ? `<span class="ibkr-code" title="${t('tag.ibkrVerified')}">${ex.ibkr}</span>`
+      : `<span class="ibkr-code unverified" title="${t('tag.ibkrUnverified')}">${t('tag.unverified')}</span>`;
     return `
     <tr data-ticker="${d.t}">
       <td class="tk">${d.t}</td>
-      <td>${d.n}</td>
-      <td><span class="dot" style="background:${COUNTRY_COLOR[d.c]}"></span>${d.c}</td>
+      <td>${dispName(d)}</td>
+      <td><span class="dot" style="background:${COUNTRY_COLOR[d.c]}"></span>${dispCountry(d.c)}</td>
       <td><div class="exch-cell">${ex.name}${ibkrBadge}</div><div class="exch-ccy">${d.cur}${ex.note?' · '+ex.note:''}</div></td>
-      <td><span class="pill">${SECTOR_ZH[d.s].split(' ')[0]}</span></td>
+      <td><span class="pill">${sectorShort(d.s)}</span></td>
       <td class="num">${(d.w*100).toFixed(2)}%</td>
-      <td class="num">${(d.dy*100).toFixed(1)}%${d._dyLive?'<span class="live-dot" title="实时数据('+d._fundQuarter+' · '+d._fundAsOf+')"></span>':''}</td>
-      <td class="num">${d.pe.toFixed(1)}x${d._peLive?'<span class="live-dot" title="实时'+peTypeLabel(d._peType)+'PE('+d._fundQuarter+' · '+d._fundAsOf+')"></span>':''}</td>
-      <td class="num">${d.beta.toFixed(2)}${d._betaLive?'<span class="live-dot" title="实时数据('+d._fundQuarter+' · '+d._fundAsOf+')"></span>':''}</td>
+      <td class="num">${(d.dy*100).toFixed(1)}%${d._dyLive?`<span class="live-dot" title="${t('live.title',{q:d._fundQuarter,d:d._fundAsOf})}"></span>`:''}</td>
+      <td class="num">${d.pe.toFixed(1)}x${d._peLive?`<span class="live-dot" title="${t('live.titlePe',{type:peTypeLabel(d._peType),q:d._fundQuarter,d:d._fundAsOf})}"></span>`:''}</td>
+      <td class="num">${d.beta.toFixed(2)}${d._betaLive?`<span class="live-dot" title="${t('live.title',{q:d._fundQuarter,d:d._fundAsOf})}"></span>`:''}</td>
     </tr>
     <tr class="moat-row ${expandedTicker===d.t?'show':''}" data-moat-for="${d.t}">
-      <td colspan="9">${d.ind} — ${d.m}</td>
+      <td colspan="9">${dispInd(d)} — ${dispMoat(d)}</td>
     </tr>`;
   }).join('');
 
@@ -1017,22 +1024,22 @@ async function loadStatus(){
     $('offlineBox').style.display = 'none';
     const bits = [];
     bits.push(s.is_mock
-      ? '<span class="mock">⚠ MOCK 数据(测试模式,非真实价格)</span>'
-      : '<span class="live">● 实时 · Yahoo Finance</span>');
-    bits.push(`<span class="lbl">最新价格日</span> <span class="val">${s.latest_price_date || '—'}</span>`);
-    bits.push(`<span class="lbl">起始日</span> <span class="val">${s.inception_date || '未播种'}</span>`);
-    bits.push(`<span class="lbl">净值点数</span> <span class="val">${s.nav_points}</span>`);
-    bits.push(`<span class="lbl">每日抓取</span> <span class="val">${s.fetch_hour}:00</span>`);
+      ? `<span class="mock">${t('status.mock')}</span>`
+      : `<span class="live">${t('sb.live')}</span>`);
+    bits.push(`<span class="lbl">${t('sb.latestPrice')}</span> <span class="val">${s.latest_price_date || '—'}</span>`);
+    bits.push(`<span class="lbl">${t('sb.inception')}</span> <span class="val">${s.inception_date || t('sb.notSeeded')}</span>`);
+    bits.push(`<span class="lbl">${t('sb.navPoints')}</span> <span class="val">${s.nav_points}</span>`);
+    bits.push(`<span class="lbl">${t('sb.dailyFetch')}</span> <span class="val">${s.fetch_hour}:00</span>`);
     const a = s.archive || {};
-    bits.push(`<span class="lbl">已存档价格</span> <span class="val">${(a.price_rows||0).toLocaleString()} 行 / ${a.price_dates||0} 天</span>`);
+    bits.push(`<span class="lbl">${t('sb.archived')}</span> <span class="val">${t('sb.rows',{rows:(a.price_rows||0).toLocaleString(),days:a.price_dates||0})}</span>`);
     bits.push(`<span class="lbl">DB</span> <span class="val">${((a.db_size_bytes||0)/1024).toFixed(0)} KB</span>`);
-    bits.push(`<a href="${API}/api/price_history.csv" class="val" style="color:var(--gold);text-decoration:none;border-bottom:1px solid var(--gold-dim)">下载价格存档 CSV ↓</a>`);
+    bits.push(`<a href="${API}/api/price_history.csv" class="val" style="color:var(--gold);text-decoration:none;border-bottom:1px solid var(--gold-dim)">${t('sb.csv')} ↓</a>`);
     $('sbConn').innerHTML = bits.join(' &nbsp;·&nbsp; ');
 
     const rb = $('resetBanner');
     if(s.base_ccy_mismatch){
       rb.style.display = 'flex';
-      $('rbOld').textContent = s.index_base_ccy || 'USD(旧版本隐式默认,未标记)';
+      $('rbOld').textContent = s.index_base_ccy || t('sb.legacyCcy');
       $('rbNew').textContent = s.config.BASE_CCY.value;
       $('rbNew2').textContent = s.config.BASE_CCY.value;
     } else {
@@ -1040,7 +1047,7 @@ async function loadStatus(){
     }
     return s;
   }catch(e){
-    $('sbConn').innerHTML = '<span class="mock">✗ 后端未连接</span>';
+    $('sbConn').innerHTML = `<span class="mock">${t('sb.disconnected')}</span>`;
     $('offlineBox').style.display = 'block';
     $('navResults').style.display = 'none';
     return null;
@@ -1056,7 +1063,7 @@ async function loadNav(){
     if(ARCHIVE_RANGE){
       const sd = $('simDate');
       sd.min = ARCHIVE_RANGE.first; sd.max = ARCHIVE_RANGE.last;
-      $('tfNote').textContent = `价格存档 ${ARCHIVE_RANGE.first} → ${ARCHIVE_RANGE.last}`;
+      $('tfNote').textContent = t('nav.archiveRange',{first:ARCHIVE_RANGE.first,last:ARCHIVE_RANGE.last});
     }
     renderNav();
   }catch(e){ $('navResults').style.display='none'; }
@@ -1095,21 +1102,20 @@ function renderNav(){
     });
     $('simBanner').style.display = usingSim ? 'block' : 'none';
     if(usingSim){
-      $('simBanner').textContent = `模拟模式:以 ${SIM.stats.inception} 为起始日,`
-        + `用价格存档完整重算(整数股重新分配、年度再平衡按新日历)。实际净值序列未被改动。`;
+      $('simBanner').textContent = t('nav.simBanner', {date: SIM.stats.inception});
     }
     $('simClear').style.display = usingSim ? 'inline-block' : 'none';
-    const IB = st.base_ccy || 'CHF';          // the index's own denomination
+    const IB = stot.base_ccy || 'CHF';          // the index's own denomination
     const isym = (CCY_SYMBOL[IB] || IB + ' ');
     const navTotal = st.nav_base != null ? st.nav_base : st.nav_usd;
-    const winLbl = TF === 'ALL' ? '全部区间' : TF;
+    const winLbl = TF === 'ALL' ? t('nav.allRange') : TF;
     const kpis = [
-      ['净值/份 NAV/Share', isym + st.nav_per_share.toFixed(2), `起始 ${isym}50.00`],
-      [`区间收益 (${winLbl})`, fmtPct(st.total_return, 2), `${st.inception} → ${st.as_of}`],
-      ['指数总市值 NAV', navTotal != null ? isym + (navTotal/1e9).toFixed(3) + 'B' : '—', '2亿份'],
-      ['区间波动 Vol', st.vol_ann != null ? fmtPct(st.vol_ann, 2) : '—', '日收益年化'],
-      ['最大回撤 Max DD', st.max_drawdown != null ? fmtPct(st.max_drawdown, 2) : '—', '峰值到谷底'],
-      ['区间天数', st.points, usingSim ? '模拟重算' : `共 ${full.length} 天记录`],
+      [t('nav.perShare'), isym + st.nav_per_share.toFixed(2), t('nav.startedAt', {v: isym + '50.00'})],
+      [t('nav.windowReturn', {win: winLbl}), fmtPct(st.total_return, 2), `${st.inception} → ${st.as_of}`],
+      [t('nav.totalNav'), navTotal != null ? isym + (navTotal/1e9).toFixed(3) + 'B' : '—', t('nav.units')],
+      [t('nav.vol', {win: winLbl}), st.vol_ann != null ? fmtPct(st.vol_ann, 2) : '—', t('nav.volSub')],
+      [t('nav.maxdd'), st.max_drawdown != null ? fmtPct(st.max_drawdown, 2) : '—', t('nav.maxddSub')],
+      [t('nav.days'), st.points, usingSim ? t('nav.simulated') : t('nav.daysOf', {n: full.length})],
     ];
     $('navKpis').innerHTML = kpis.map(([l,v,s]) =>
       `<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${s}</div></div>`).join('');
@@ -1145,16 +1151,16 @@ document.querySelectorAll('.tf-btn').forEach(b => {
 
 $('simRun').addEventListener('click', async () => {
   const d = $('simDate').value;
-  if(!d){ $('tfNote').textContent = '请先选一个起始日期'; return; }
-  const btn = $('simRun'); btn.disabled = true; btn.textContent = '重算中…';
+  if(!d){ $('tfNote').textContent = t('nav.pickDate'); return; }
+  const btn = $('simRun'); btn.disabled = true; btn.textContent = t('nav.recomputing');
   try{
     SIM = await api('/api/nav/simulate?inception=' + encodeURIComponent(d));
     renderNav();
-    if(ARCHIVE_RANGE) $('tfNote').textContent = `价格存档 ${ARCHIVE_RANGE.first} → ${ARCHIVE_RANGE.last}`;
+    if(ARCHIVE_RANGE) $('tfNote').textContent = t('nav.archiveRange',{first:ARCHIVE_RANGE.first,last:ARCHIVE_RANGE.last});
   }catch(e){
     SIM = null;
     $('tfNote').textContent = '✗ ' + e.message;
-  }finally{ btn.disabled = false; btn.textContent = '重算'; }
+  }finally{ btn.disabled = false; btn.textContent = t('sim.run'); }
 });
 
 $('simClear').addEventListener('click', () => { SIM = null; renderNav(); });
@@ -1176,7 +1182,7 @@ function renderCash(){
       CASH_PENDING[inp.dataset.ccy] = inp.value;
       inp.classList.add('dirty');
       $('posStatus').className = 'status-msg';
-      $('posStatus').textContent = '有未保存的修改(现金/持仓)';
+      $('posStatus').textContent = t('pos.unsaved');
     });
     inp.addEventListener('keydown', e => { if(e.key === 'Enter') saveAll(); });
   });
@@ -1187,7 +1193,7 @@ async function saveCash(){
   if(!keys.length) return 0;
   const payload = keys.map(c => ({ccy: c, amount: parseFloat(CASH_PENDING[c]) || 0}));
   const bad = payload.filter(p => !isFinite(p.amount) || p.amount < 0);
-  if(bad.length) throw new Error('现金金额无效: ' + bad.map(b=>b.ccy).join(', '));
+  if(bad.length) throw new Error(t('pos.badCash') + bad.map(b=>b.ccy).join(', '));
   await api('/api/cash', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({cash: payload})});
   CASH_PENDING = {};
@@ -1213,23 +1219,23 @@ async function loadPositions(){
     renderPosKpis(); renderCash(); renderPosTable(); renderSectorDrift();
   }catch(e){
     $('posStatus').className='status-msg err';
-    $('posStatus').textContent='✗ 无法读取持仓: ' + e.message;
+    $('posStatus').textContent = t('pos.loadFailed') + e.message;
   }
 }
 
 function renderPosKpis(){
-  const t = TOTALS;
+  const tot = TOTALS;
   const trackErr = POSROWS.reduce((s,r)=> s + Math.abs(r.drift), 0) / 2;
-  const pnlUsd = t.pnl_usd || 0;
+  const pnlUsd = tot.pnl_usd || 0;
   const rate = BASE === 'USD' ? 1 : (FXRATES[BASE] || 0);
   const kpis = [
-    ['总资产 Total Value', moneyBase(t.total_value_usd), `证券 + 现金`],
-    ['证券市值 Securities', moneyBase(t.market_value_usd), `${t.positions_held} 个持仓`],
-    ['现金 Cash', moneyBase(t.cash_usd), `占总资产 ${((t.cash_pct||0)*100).toFixed(1)}%`],
-    ['浮动盈亏 Unrealized P/L', (pnlUsd>=0?'+':'') + moneyBase(t.pnl_usd),
+    [t('pos.total'), moneyBase(tot.total_value_usd), t('pos.totalSub')],
+    [t('pos.securities'), moneyBase(tot.market_value_usd), t('pos.securitiesSub', {n: tot.positions_held})],
+    [t('pos.cash'), moneyBase(tot.cash_usd), t('pos.cashSub', {v: ((tot.cash_pct||0)*100).toFixed(1) + '%'})],
+    [t('pos.pnl'), (pnlUsd>=0?'+':'') + moneyBase(tot.pnl_usd),
       t.pnl_pct==null ? '—' : ((t.pnl_pct>=0?'+':'') + (t.pnl_pct*100).toFixed(2) + '%')],
-    ['权重偏离度', fmtPct(trackErr, 2), '与目标权重的总偏离(半绝对值和)'],
-    ['报告货币', BASE, BASE === (t.base_ccy||'CHF') ? '组合基准货币' :
+    [t('pos.trackErr'), fmtPct(trackErr, 2), t('pos.trackErrSub')],
+    [t('pos.reportCcy'), BASE, BASE === (tot.base_ccy||'CHF') ? t('pos.reportingSub') :
       `1 ${BASE} = $${rate ? rate.toFixed(4) : '—'}`],
   ];
   $('posKpis').innerHTML = kpis.map(([l,v,s]) =>
@@ -1248,7 +1254,7 @@ function renderPosTable(){
     return true;
   });
   rows.sort((a,b) => (b.mv_usd||0) - (a.mv_usd||0) || b.target_weight - a.target_weight);
-  $('posCount').textContent = `${rows.length} 行 · ${TOTALS.positions_held} 个已持有`;
+  $('posCount').textContent = t('pos.count', {rows: rows.length, held: TOTALS.positions_held});
   const h1 = $('hdrCcy1'), h2 = $('hdrCcy2');
   if(h1) h1.textContent = BASE;
   if(h2) h2.textContent = BASE;
@@ -1270,13 +1276,13 @@ function renderPosTable(){
         if(!rec) return `<div style="font-size:10px;color:var(--text-faint);font-family:var(--mono)">${r.ccy}</div>`;
         const ex = exchInfo(rec.x);
         const badge = ex.ibkr
-          ? `<span class="ibkr-code" style="font-size:9px;padding:1px 5px;" title="IBKR交易所代码(已核实)">${ex.ibkr}</span>`
-          : `<span class="ibkr-code unverified" style="font-size:9px;padding:1px 5px;" title="未能核实,请在IBKR内搜索确认">未核实</span>`;
+          ? `<span class="ibkr-code" style="font-size:9px;padding:1px 5px;" title="${t('tag.ibkrVerified')}">${ex.ibkr}</span>`
+          : `<span class="ibkr-code unverified" style="font-size:9px;padding:1px 5px;" title="${t('tag.ibkrUnverified')}">${t('tag.unverified')}</span>`;
         return `<div class="exch-cell" style="margin-top:3px;">
           <span style="font-size:10px;color:var(--text-faint);font-family:var(--mono)">${ex.name} · ${r.ccy}</span>${badge}
         </div>`;
       })()}</td>
-      <td>${rec ? `<span class="dot" style="background:${COUNTRY_COLOR[rec.c]}"></span>${rec.c}` : '—'}</td>
+      <td>${rec ? `<span class="dot" style="background:${COUNTRY_COLOR[rec.c]}"></span>${dispCountry(rec.c)}` : '—'}</td>
       <td class="num pos"><input class="pos-input${isDirty}" type="number" step="any" min="0" data-f="shares" data-t="${r.ticker}" value="${shVal}" placeholder="0"></td>
       <td class="num pos"><input class="pos-input${isDirty}" type="number" step="any" min="0" data-f="avg_cost" data-t="${r.ticker}" value="${acVal}" placeholder="0"></td>
       <td class="num">${r.price==null?'—':money(r.price, r.ccy)}</td>
@@ -1298,7 +1304,7 @@ function renderPosTable(){
       PENDING[t][inp.dataset.f] = inp.value;
       DIRTY.add(t); inp.classList.add('dirty');
       $('posStatus').className='status-msg';
-      $('posStatus').textContent=`${DIRTY.size} 项未保存的修改(切换筛选或货币不会丢失)`;
+      $('posStatus').textContent = t('pos.unsavedN', {n: DIRTY.size});
     });
     inp.addEventListener('keydown', e => { if(e.key === 'Enter') saveAll(); });
   });
@@ -1315,10 +1321,10 @@ function renderSectorDrift(){
   if(driftChart) driftChart.destroy();
   driftChart = new Chart($('sectorDriftChart'), {
     type:'bar',
-    data:{ labels: labels.map(s => SECTOR_ZH[s].split(' ')[0]),
+    data:{ labels: labels.map(s => sectorShort(s)),
       datasets:[
-        {label:'实际 Actual', data: labels.map(s => +((act[s]||0)*100).toFixed(2)), backgroundColor:'#C9A24B', borderRadius:2},
-        {label:'目标 Target', data: labels.map(s => +(tgt[s]*100).toFixed(2)), backgroundColor:'#3E4A5A', borderRadius:2},
+        {label: t('chart.actual'), data: labels.map(s => +((act[s]||0)*100).toFixed(2)), backgroundColor:'#C9A24B', borderRadius:2},
+        {label: t('chart.target'), data: labels.map(s => +(tgt[s]*100).toFixed(2)), backgroundColor:'#3E4A5A', borderRadius:2},
       ]},
     options:{ responsive:true,
       plugins:{legend:{position:'bottom', labels:{font:{size:11,family:"'Inter'"},boxWidth:9,padding:12}},
@@ -1339,13 +1345,13 @@ async function savePositions(quiet){
     };
   });
   if(!payload.length){
-    if(!quiet){ $('posStatus').className='status-msg'; $('posStatus').textContent='没有需要保存的修改'; }
+    if(!quiet){ $('posStatus').className='status-msg'; $('posStatus').textContent = t('pos.nothingToSave'); }
     return;
   }
   const bad = payload.filter(p => !isFinite(p.shares) || !isFinite(p.avg_cost) || p.shares < 0 || p.avg_cost < 0);
   if(bad.length){
     $('posStatus').className='status-msg err';
-    $('posStatus').textContent='✗ 存在无效数值(负数或非数字): ' + bad.map(b=>b.ticker).join(', ');
+    $('posStatus').textContent = t('pos.invalid') + bad.map(b=>b.ticker).join(', ');
     return;
   }
   if(quiet){
@@ -1355,30 +1361,30 @@ async function savePositions(quiet){
     return;
   }
   try{
-    $('posStatus').className='status-msg'; $('posStatus').textContent='保存中…';
+    $('posStatus').className='status-msg'; $('posStatus').textContent=t('pos.saving');
     await api('/api/positions', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({positions: payload})});
     PENDING = {}; DIRTY.clear();          // cleared ONLY after the server confirms
     await loadPositions();
     $('posStatus').className='status-msg ok';
-    $('posStatus').textContent = `✓ 已保存 ${payload.length} 项 · ${new Date().toLocaleTimeString()}`;
+    $('posStatus').textContent = t('pos.saved', {n: payload.length, time: new Date().toLocaleTimeString()});
   }catch(e){
     $('posStatus').className='status-msg err';
-    $('posStatus').textContent='✗ 保存失败(修改仍保留,可重试): ' + e.message;
+    $('posStatus').textContent=t('pos.saveFailed') + e.message;
   }
 }
 
 async function saveAll(){
   try{
-    $('posStatus').className='status-msg'; $('posStatus').textContent='保存中…';
+    $('posStatus').className='status-msg'; $('posStatus').textContent=t('pos.saving');
     const nCash = await saveCash();
     await savePositions(true);
     await loadPositions();
     $('posStatus').className='status-msg ok';
-    $('posStatus').textContent = `✓ 已保存(含 ${nCash} 项现金)· ${new Date().toLocaleTimeString()}`;
+    $('posStatus').textContent = t('pos.savedCash', {n: nCash, time: new Date().toLocaleTimeString()});
   }catch(e){
     $('posStatus').className='status-msg err';
-    $('posStatus').textContent='✗ 保存失败(修改仍保留,可重试): ' + e.message;
+    $('posStatus').textContent=t('pos.saveFailed') + e.message;
   }
 }
 $('saveBtn').addEventListener('click', saveAll);
@@ -1386,7 +1392,7 @@ $('saveBtn').addEventListener('click', saveAll);
 // holdings table, so the two sections stay consistent.
 COUNTRY_ORDER.forEach(c => {
   const o = document.createElement('option');
-  o.value = c; o.textContent = c;
+  o.value = c; o.textContent = dispCountry(c);
   $('posCountryFilter').appendChild(o);
 });
 $('posCountryFilter').addEventListener('change', renderPosTable);
@@ -1403,7 +1409,7 @@ $('backupBtn').addEventListener('click', (e) => {
   // WAL-safe snapshot; a plain file copy can miss committed rows still in -wal
   window.location = API + '/api/backup.db';
   $('posStatus').className = 'status-msg ok';
-  $('posStatus').textContent = '✓ 正在下载一致性快照(SQLite online backup)';
+  $('posStatus').textContent = t('pos.backupStarted');
 });
 
 $('exportBtn').addEventListener('click', async () => {
@@ -1414,80 +1420,79 @@ $('exportBtn').addEventListener('click', async () => {
     a.href = URL.createObjectURL(blob);
     a.download = 'portfolio_export_' + new Date().toISOString().slice(0,10) + '.json';
     a.click(); URL.revokeObjectURL(a.href);
-  }catch(e){ $('posStatus').className='status-msg err'; $('posStatus').textContent='✗ 导出失败: '+e.message; }
+  }catch(e){ $('posStatus').className='status-msg err'; $('posStatus').textContent = t('pos.exportFailed') + e.message; }
 });
 $('resetBtn').addEventListener('click', async () => {
   const btn = $('resetBtn');
   const newCcy = $('rbNew').textContent;
-  if(!confirm(`确认清空净值历史并以 ${newCcy} 重新播种?\n\n持仓、现金、价格存档不会受影响,此操作不可撤销。`)) return;
-  btn.disabled = true; btn.textContent = '处理中…';
+  if(!confirm(t('reset.confirm', {ccy: newCcy}))) return;
+  btn.disabled = true; btn.textContent = t('reset.working');
   try{
     await api('/api/reset_index?confirm=true', {method:'POST'});
     $('resetBanner').style.display = 'none';
     await boot();
     $('posStatus').className = 'status-msg ok';
-    $('posStatus').textContent = `✓ 已以 ${newCcy} 重新播种`;
+    $('posStatus').textContent = t('reset.done', {ccy: newCcy});
   }catch(e){
-    alert('重置失败: ' + e.message);
+    alert(t('reset.failed') + e.message);
   }finally{
-    btn.disabled = false; btn.textContent = `以 ${newCcy} 重新播种`;
+    btn.disabled = false; btn.textContent = `${t('rebase.btn')} ${newCcy}`;
   }
 });
 
 $('refreshBtn').addEventListener('click', async () => {
-  const btn = $('refreshBtn'); btn.disabled = true; btn.textContent = '抓取中…';
+  const btn = $('refreshBtn'); btn.disabled = true; btn.textContent = t('sb.fetching');
   try{
     const r = await api('/api/refresh', {method:'POST'});
     await boot();
     if(r.stale_constituents > 0){
       $('posStatus').className = 'status-msg';
-      $('posStatus').textContent = `注意: ${r.stale_constituents} 支成分股所在市场休市,已按其最近收盘价估值 `
+      $('posStatus').textContent = t('sb.holidayNote', {n: r.stale_constituents})
         + `(${(r.stale_tickers||[]).join(', ')})`;
     }
   }
-  catch(e){ $('sbConn').innerHTML = '<span class="mock">✗ 抓取失败: ' + e.message + '</span>'; }
-  finally{ btn.disabled = false; btn.textContent = '立即抓取一次'; }
+  catch(e){ $('sbConn').innerHTML = `<span class="mock">${t('sb.fetchFailed')}${e.message}</span>`; }
+  finally{ btn.disabled = false; btn.textContent = t('status.refresh'); }
 });
 
 /* ---------------- Quarterly fundamentals ---------------- */
 function renderFundBanner(meta){
   const b = $('fundBanner');
   if(!meta){
-    b.innerHTML = '⏳ 基本面数据(P/E · 股息率 · Beta)尚未连接后端 —— 当前显示方法论中的静态估算值';
+    b.innerHTML = t('fund.noBackend');
     return;
   }
   if(meta.last_fetch_quarter){
     const upToDate = meta.up_to_date;
     const dotColor = upToDate ? 'var(--teal)' : 'var(--rust)';
     const nFlagged = (meta.last_fetch_flagged || []).length;
-    b.innerHTML = `<span style="color:${dotColor}">●</span> 基本面数据(P/E · 股息率 · Beta)最近更新:`
-      + ` <b style="color:var(--text)">${meta.last_fetch_quarter}</b> · 拉取于 ${meta.last_fetch_date}`
-      + ` · 覆盖 ${meta.tickers_covered}/78`
-      + (upToDate ? '' : ` · 当前季度 ${meta.current_quarter} 尚未更新,等下次自动抓取或手动检查`)
-      + (nFlagged ? ` · <span style="color:var(--rust)">${nFlagged} 项数值超出合理范围已自动剔除(改用估算值)</span>` : '')
+    b.innerHTML = `<span style="color:${dotColor}">●</span> ${t('fund.updated')}`
+      + ` <b style="color:var(--text)">${meta.last_fetch_quarter}</b>` + t('fund.fetchedOn', {d: meta.last_fetch_date})
+      + t('fund.coverage', {n: meta.tickers_covered})
+      + (upToDate ? '' : t('fund.stale', {q: meta.current_quarter}))
+      + (nFlagged ? ` <span style="color:var(--rust)">${t('fund.flagged', {n: nFlagged})}</span>` : '')
       // Always-available manual re-check, even once up to date — a normal
       // (non-forced) click would just get skipped by the quarter gate, so
       // this one always forces, which is what makes it useful for e.g.
       // re-trying after a data-quality issue rather than waiting for the
       // next quarter.
-      + ` · <button class="run-btn ghost" id="fundRecheck" style="padding:2px 9px;font-size:10px;margin-left:4px;">手动重新拉取</button>`;
+      + ` · <button class="run-btn ghost" id="fundRecheck" style="padding:2px 9px;font-size:10px;margin-left:4px;">${t('fund.recheck')}</button>`;
   } else {
-    b.innerHTML = `⏳ 尚未拉取过基本面数据(每季度首日自动抓取一次,即将到 ${meta.current_quarter}季度更新)。`
-      + ` 当前 P/E / 股息率 / Beta 显示的是方法论中的静态估算值。`
-      + ` <button class="run-btn ghost" id="fundRunNow" style="padding:3px 10px;font-size:10.5px;margin-left:6px;">立即检查一次</button>`;
+    b.innerHTML = t('fund.never', {q: meta.current_quarter})
+      + ` <button class="run-btn ghost" id="fundRunNow" style="padding:3px 10px;font-size:10.5px;margin-left:6px;">${t('fund.runNow')}</button>`;
   }
   const runBtn = document.getElementById('fundRunNow');
   if(runBtn) runBtn.addEventListener('click', async () => {
-    runBtn.disabled = true; runBtn.textContent = '检查中…';
+    runBtn.disabled = true; runBtn.textContent = t('fund.checking');
     try{ await api('/api/refresh_fundamentals', {method:'POST'}); await loadFundamentals(); }
-    catch(e){ b.innerHTML = '✗ 检查失败: ' + e.message; }
+    catch(e){ b.innerHTML = t('fund.checkFailed') + e.message; }
   });
   const recheckBtn = document.getElementById('fundRecheck');
   if(recheckBtn) recheckBtn.addEventListener('click', async () => {
-    recheckBtn.disabled = true; recheckBtn.textContent = '拉取中…';
+    recheckBtn.disabled = true; recheckBtn.textContent = t('fund.fetching');
     try{ await api('/api/refresh_fundamentals?force=true', {method:'POST'}); await loadFundamentals(); }
     catch(e){
-      recheckBtn.disabled = false; recheckBtn.textContent = '手动重新拉取';
+      recheckBtn.disabled = false; recheckBtn.textContent = t('fund.recheck');
       b.innerHTML += ` <span style="color:var(--rust)">✗ ${e.message}</span>`;
     }
   });
@@ -1520,10 +1525,60 @@ async function loadFundamentals(){
   }, { passive: true });
 })();
 
+/**
+ * Push the current language into the document.
+ *
+ * Static text carries a data-i18n attribute so it can be re-applied on every
+ * switch; anything built by a render function is re-rendered instead, because
+ * its strings were interpolated when it was built.
+ */
+function applyI18n(){
+  document.documentElement.lang = (LANG === 'zh') ? 'zh-CN' : 'en';
+  document.title = t('doc.title');
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  const b = $('langBtn'); if(b) b.textContent = t('lang.switch');
+}
+
+function setLang(lang){
+  LANG = I18N.resolve(lang);
+  localStorage.setItem('hh_lang', LANG);
+  // Keep the desktop shell's menus in the same language as the window.
+  if(window.desktop && window.desktop.setLanguage) window.desktop.setLanguage(LANG);
+  applyI18n();
+  // Rebuild everything whose strings were baked in at render time. Each is
+  // guarded: a section that has not loaded yet must not stop the others.
+  [rebuildEffectiveData, renderKPIs, renderValueMap, applyFiltersAndRender,
+   renderTicker, renderNav, renderPosTable, renderCash, renderPosKpis].forEach(fn => {
+    try { if(typeof fn === 'function') fn(); } catch(e){ /* not loaded yet */ }
+  });
+  rebuildFilterLabels();
+}
+
+/** Option text is generated once at load, so it needs re-labelling by hand. */
+function rebuildFilterLabels(){
+  const sf = $('sectorFilter');
+  if(sf) [...sf.options].forEach(o => { if(o.value) o.textContent = sectorLabel(o.value); });
+  ['countryFilter','posCountryFilter'].forEach(id => {
+    const el = $(id);
+    if(el) [...el.options].forEach(o => { if(o.value) o.textContent = dispCountry(o.value); });
+  });
+  const xf = $('exchFilter');
+  if(xf) [...xf.options].forEach(o => {
+    if(o.value) o.textContent = `${dispExch(o.value)} (${DATA.filter(d => d.x === o.value).length})`;
+  });
+}
+
 async function boot(){
   // Resolved against API rather than left as a bare "/guide" so the link also
   // works when this file is opened straight from disk, where there is no origin
   // for a root-relative path to resolve against.
+  applyI18n();
+  const lb = $('langBtn');
+  if(lb) lb.addEventListener('click', () => setLang(LANG === 'zh' ? 'en' : 'zh'));
+
   const gl = document.getElementById('guideLink');
   if(gl) gl.href = API + '/guide';
 
@@ -1542,7 +1597,7 @@ async function boot(){
           // nothing to update here. On cancel, nothing happened at all.
           await window.desktop.importDatabase();
         }catch(e){
-          alert('导入失败 / Import failed: ' + (e && e.message ? e.message : e));
+          alert(t('import.failed') + (e && e.message ? e.message : e));
         }finally{
           ib.disabled = false;
         }

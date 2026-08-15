@@ -9,6 +9,39 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.6.0
+
+**Changed**
+
+- **The application interface is now English by default**, with a switch in
+  the header for Chinese. It was Chinese-only, which sat oddly beside a build
+  guide written in English.
+
+**Added**
+
+- All 78 companies now carry English names, industries and moat notes
+  (`universe_en.py`), served by the API alongside the Chinese originals. The
+  page's copy of that data is regenerated from `universe.py` by script rather
+  than by hand, so the two cannot drift apart.
+- `static/lib/i18n.js`: 177 interface strings in both languages, with a
+  fallback that shows the key rather than a blank when one is missing.
+- The tray menu and notifications follow the same setting. The first-run
+  database prompts stay bilingual on purpose — they appear before anyone has
+  expressed a preference, and getting that dialog wrong loses data.
+- Ten tests for the dictionary: identical keys in both languages, no English
+  string left containing Chinese, matching placeholders, and locale resolution.
+  A translation fails as one label in a panel nobody looked at, in a language
+  the author does not read; those checks are mechanical for that reason.
+
+**Documentation**
+
+- Part 15, reading the source: how to approach an unfamiliar codebase, a
+  reading order for this one, and nine experiments that each make one idea
+  from the guide concrete — including deliberately breaking the missing-price
+  rule to see the plausible wrong number it exists to prevent.
+
+---
+
 ## v1.5.1
 
 No functional change. Part 14 of the guide was written with one specific
