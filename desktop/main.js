@@ -32,6 +32,7 @@ let backend = null;
 let backendPort = null;
 let logStream = null;
 let isQuitting = false;
+let isRestarting = false;   // suppresses the "backend died" alarm during a deliberate restart
 const backendLog = [];   // tail kept in memory so a startup failure can be shown
 
 // ---------------------------------------------------------------- logging
@@ -91,12 +92,35 @@ function backendCommand() {
  * file, and copying portfolio.db alone can silently lose them. The source is
  * left untouched, so this is reversible if anything looks wrong.
  */
-function copyDatabase(source, target) {
+function copyDatabaseFiles(source, target) {
+  // Clear sidecars belonging to whatever is being replaced FIRST. A -wal file
+  // left over from the previous database gets applied to the new one the next
+  // time SQLite opens it, which is an efficient way to corrupt both.
+  for (const suffix of ['-wal', '-shm']) {
+    if (fs.existsSync(target + suffix)) fs.unlinkSync(target + suffix);
+  }
   for (const suffix of ['', '-wal', '-shm']) {
     const from = source + suffix;
     if (fs.existsSync(from)) fs.copyFileSync(from, target + suffix);
   }
-  log(`imported database from ${source} (source left in place)`);
+  log(`copied database ${source} -> ${target} (source left in place)`);
+}
+
+/**
+ * Stop the backend and wait for the process to actually be gone.
+ *
+ * stopBackend() only sends the kill; on Windows the file handle survives for a
+ * moment afterwards, and copying over a database the dying process still holds
+ * open fails with EBUSY. Anything that replaces the database file has to wait
+ * here first.
+ */
+function stopBackendAndWait(timeoutMs = 10000) {
+  const child = backend;
+  if (!child) return Promise.resolve();
+  const exited = new Promise(resolve => child.once('exit', resolve));
+  stopBackend();
+  return Promise.race([exited, new Promise(r => setTimeout(r, timeoutMs))])
+    .then(() => new Promise(r => setTimeout(r, 500)));
 }
 
 /**
@@ -120,7 +144,7 @@ async function ensureDatabase(userData) {
   if (!app.isPackaged) {
     const devCopy = path.join(REPO, 'portfolio.db');
     if (fs.existsSync(devCopy)) {
-      copyDatabase(devCopy, target);
+      copyDatabaseFiles(devCopy, target);
       return true;
     }
   }
@@ -167,8 +191,99 @@ async function ensureDatabase(userData) {
     log('import cancelled; quitting without creating a database');
     return false;
   }
-  copyDatabase(picked.filePaths[0], target);
+  copyDatabaseFiles(picked.filePaths[0], target);
   return true;
+}
+
+/**
+ * Import a database at any time, not just on a first run with nothing to lose.
+ *
+ * The first-run prompt answered "where is my data" only at the one moment the
+ * app had no data. Anyone who answered "start fresh", or who moves a machine,
+ * or who restores a backup, had no route back — the only way in was to quit,
+ * delete a file by hand in an AppData folder, and relaunch.
+ *
+ * This replaces live data, so it: refuses anything that is not a SQLite file
+ * BEFORE touching the original, backs up what is there, stops the backend so
+ * the file is not held open, swaps, restarts, and reloads the window.
+ */
+async function importDatabaseNow(userData) {
+  const picked = await dialog.showOpenDialog({
+    title: '选择要导入的 portfolio.db / Select a portfolio.db to import',
+    properties: ['openFile'],
+    filters: [{ name: 'SQLite database', extensions: ['db'] }],
+  });
+  if (picked.canceled || !picked.filePaths.length) return;
+  const source = picked.filePaths[0];
+
+  // Every SQLite file begins with this exact string. Checking it costs nothing
+  // and prevents the worst outcome here: the original replaced by a file the
+  // backend then cannot open, leaving the app unable to start at all.
+  let header = '';
+  try {
+    const fd = fs.openSync(source, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    header = buf.toString('utf8');
+  } catch (e) {
+    header = '';
+  }
+  if (!header.startsWith('SQLite format 3')) {
+    dialog.showErrorBox(
+      '这不是一个 SQLite 数据库 / Not a SQLite database',
+      `${source}\n\n文件头不匹配,已取消 —— 当前数据未被改动。\n`
+      + 'The file header does not match. Cancelled; nothing was changed.');
+    return;
+  }
+
+  const target = path.join(userData, 'portfolio.db');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const backup = path.join(userData, `portfolio-replaced-${stamp}.db`);
+
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['导入并重启 / Import and restart', '取消 / Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: '导入数据库 / Import database',
+    message: '当前数据库将被替换 / The current database will be replaced',
+    detail: `导入 / From:\n${source}\n\n`
+          + `现有数据先备份到 / Current data is backed up first:\n${backup}\n\n`
+          + '随后会重启后台服务并刷新窗口。\n'
+          + 'The backend will then restart and the window will reload.',
+  });
+  if (response !== 0) {
+    log('import cancelled at the confirmation step');
+    return;
+  }
+
+  try {
+    isRestarting = true;
+    await stopBackendAndWait();
+
+    if (fs.existsSync(target)) copyDatabaseFiles(target, backup);
+    copyDatabaseFiles(source, target);
+
+    backendPort = await freePort();
+    startBackend(backendPort, userData);
+    await waitForBackend(backendPort);
+    isRestarting = false;
+
+    // Both windows are pointed at the old port, which is now dead.
+    if (guideWindow && !guideWindow.isDestroyed()) guideWindow.close();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(`http://127.0.0.1:${backendPort}/`);
+    }
+    notify('数据库已导入 / Database imported',
+           `原数据已备份 / Previous data saved as:\n${path.basename(backup)}`);
+  } catch (err) {
+    isRestarting = false;
+    log(`import failed: ${err.message}`);
+    dialog.showErrorBox(
+      '导入失败 / Import failed',
+      `${err.message}\n\n原数据备份在 / Your previous data is at:\n${backup}`);
+  }
 }
 
 function startBackend(port, userData) {
@@ -207,7 +322,9 @@ function startBackend(port, userData) {
   backend.on('exit', (code, signal) => {
     log(`backend exited (code=${code} signal=${signal})`);
     backend = null;
-    if (!isQuitting) {
+    // A restart stops the backend on purpose; without this guard the import
+    // flow would greet the user with a crash dialog mid-way through working.
+    if (!isQuitting && !isRestarting) {
       dialog.showErrorBox(
         '后台服务已停止 / Backend stopped',
         `数据服务意外退出 (code ${code})。请重启应用。\n\n` +
@@ -435,6 +552,7 @@ function buildTray(userData) {
         click: () => runAction('/api/refresh_fundamentals', '基本面 / Fundamentals'),
       },
       { type: 'separator' },
+      { label: '导入数据库… / Import database…', click: () => importDatabaseNow(userData) },
       { label: '这个应用是怎么做出来的 / How this app was built', click: openGuide },
       { label: '打开数据文件夹 / Open data folder', click: () => shell.openPath(userData) },
       { label: `版本 / Version ${app.getVersion()}`, enabled: false },
