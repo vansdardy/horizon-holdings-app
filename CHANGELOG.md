@@ -9,6 +9,56 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.6.1
+
+Three bugs found by running the installed app, none of which the test suite
+could have seen. All three shipped in v1.6.0.
+
+**Fixed**
+
+- **The NAV chart never appeared.** A careless rename turned `st.base_ccy` into
+  `stot.base_ccy` inside `renderNav()`. That function is wrapped in a try/catch
+  which hides the panel on failure — a deliberate choice, so one bad section
+  cannot take the page down with it — so the entire chart and its six KPIs
+  vanished silently, with nothing logged and no error on screen. A guard that
+  degrades quietly also hides the bug it degrades around.
+- **Switching language reset the status bar to "Connecting…" for good.** The
+  element carried `data-i18n="status.connecting"` so its first paint would read
+  correctly before any request finished. Once live status replaced it the
+  attribute stayed, and `applyI18n()` re-applies every `data-i18n` on the page
+  at each language switch — so a working status bar reverted to "Connecting…"
+  and nothing ever put it back. The app looked like it had lost its backend.
+  Status is now written through `setStatusLine()`, which drops the attribute,
+  and `setLang()` re-runs `loadStatus()` so the text still follows the language.
+- **Switching language added a tray icon each time.** `Tray` is a live shell
+  icon, not a value: constructing another adds a second icon and the first stays
+  put, because the shell owns it and dropping the JavaScript reference changes
+  nothing. The language handler called `buildTray()` to pick up the translated
+  menu, so English → Chinese → English left three icons, two stale and labelled
+  in the wrong language. The handler now re-labels the existing tray.
+- The window's language is announced to the shell at startup, not only when the
+  switch is clicked. Relaunching after choosing Chinese came back as a Chinese
+  window with an English tray menu.
+
+**Added**
+
+- Eight tests over the two files that had none, because neither is reachable
+  from a unit test: the page is one inline script with no build step, and the
+  Electron main process cannot be imported outside Electron.
+  - A miniature no-undef check that scans the page's script for identifiers it
+    never declares. This is the one that would have caught `stot` — and it does:
+    reintroducing the typo fails it by name.
+  - A rule that no element is both `data-i18n` translated and written by script,
+    which is the general form of the status-bar bug.
+  - Structural checks that a `Tray` is constructed in exactly one place and that
+    the language handler re-labels rather than rebuilds. These read source text
+    rather than run it; weak evidence of correctness, strong evidence of intent,
+    and they carry the reason with them.
+- `desktop.log` records when a tray icon is created. Duplicate icons are only
+  visible by eye, so the log is the one place the invariant can be checked.
+
+---
+
 ## v1.6.0
 
 **Changed**

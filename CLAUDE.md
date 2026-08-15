@@ -97,7 +97,8 @@ cd desktop && npm run dist
 
 Public at `https://github.com/vansdardy/horizon-holdings-app`, `main` branch. Git Credential
 Manager is configured system-wide and already holds credentials, so pushes work without setup.
-`gh` is **not** installed, so GitHub Releases cannot be created from here.
+`gh` is installed (2.97.0) and authenticated as `vansdardy`, so Releases can be created and
+installers uploaded from here with `gh release create`.
 
 **`portfolio.db` must never be committed.** It holds real positions and cost basis, and the
 repository is public; git history preserves deleted files, so a single accidental commit is not

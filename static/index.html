@@ -1018,6 +1018,27 @@ async function api(path, opts){
 }
 
 /* ---------------- status + NAV ---------------- */
+
+/**
+ * Write the status bar, and stop applyI18n() from ever overwriting it again.
+ *
+ * `sbConn` is born carrying data-i18n="status.connecting" so the very first
+ * paint says "Connecting…" in the right language before any request has
+ * finished. The moment real status arrives that placeholder is a lie, but the
+ * attribute stayed — and applyI18n() re-applies every data-i18n on the page on
+ * each language switch. Switching language therefore reset a live status bar to
+ * "Connecting…" permanently, since nothing re-ran to put it back; the app
+ * looked like it had lost its backend. Dropping the attribute on first write
+ * makes the element opt out of blind re-translation, and setLang() re-runs
+ * loadStatus() instead so the text still follows the language.
+ */
+function setStatusLine(html){
+  const el = $('sbConn');
+  if(!el) return;
+  el.removeAttribute('data-i18n');
+  el.innerHTML = html;
+}
+
 async function loadStatus(){
   try{
     const s = await api('/api/status');
@@ -1034,7 +1055,7 @@ async function loadStatus(){
     bits.push(`<span class="lbl">${t('sb.archived')}</span> <span class="val">${t('sb.rows',{rows:(a.price_rows||0).toLocaleString(),days:a.price_dates||0})}</span>`);
     bits.push(`<span class="lbl">DB</span> <span class="val">${((a.db_size_bytes||0)/1024).toFixed(0)} KB</span>`);
     bits.push(`<a href="${API}/api/price_history.csv" class="val" style="color:var(--gold);text-decoration:none;border-bottom:1px solid var(--gold-dim)">${t('sb.csv')} ↓</a>`);
-    $('sbConn').innerHTML = bits.join(' &nbsp;·&nbsp; ');
+    setStatusLine(bits.join(' &nbsp;·&nbsp; '));
 
     const rb = $('resetBanner');
     if(s.base_ccy_mismatch){
@@ -1047,7 +1068,7 @@ async function loadStatus(){
     }
     return s;
   }catch(e){
-    $('sbConn').innerHTML = `<span class="mock">${t('sb.disconnected')}</span>`;
+    setStatusLine(`<span class="mock">${t('sb.disconnected')}</span>`);
     $('offlineBox').style.display = 'block';
     $('navResults').style.display = 'none';
     return null;
@@ -1105,7 +1126,7 @@ function renderNav(){
       $('simBanner').textContent = t('nav.simBanner', {date: SIM.stats.inception});
     }
     $('simClear').style.display = usingSim ? 'inline-block' : 'none';
-    const IB = stot.base_ccy || 'CHF';          // the index's own denomination
+    const IB = st.base_ccy || 'CHF';            // the index's own denomination
     const isym = (CCY_SYMBOL[IB] || IB + ' ');
     const navTotal = st.nav_base != null ? st.nav_base : st.nav_usd;
     const winLbl = TF === 'ALL' ? t('nav.allRange') : TF;
@@ -1451,7 +1472,7 @@ $('refreshBtn').addEventListener('click', async () => {
         + `(${(r.stale_tickers||[]).join(', ')})`;
     }
   }
-  catch(e){ $('sbConn').innerHTML = `<span class="mock">${t('sb.fetchFailed')}${e.message}</span>`; }
+  catch(e){ setStatusLine(`<span class="mock">${t('sb.fetchFailed')}${e.message}</span>`); }
   finally{ btn.disabled = false; btn.textContent = t('status.refresh'); }
 });
 
@@ -1550,8 +1571,11 @@ function setLang(lang){
   applyI18n();
   // Rebuild everything whose strings were baked in at render time. Each is
   // guarded: a section that has not loaded yet must not stop the others.
+  // loadStatus is in the list because the status bar opts out of applyI18n
+  // once it holds real data — see setStatusLine.
   [rebuildEffectiveData, renderKPIs, renderValueMap, applyFiltersAndRender,
-   renderTicker, renderNav, renderPosTable, renderCash, renderPosKpis].forEach(fn => {
+   renderTicker, renderNav, renderPosTable, renderCash, renderPosKpis,
+   loadStatus].forEach(fn => {
     try { if(typeof fn === 'function') fn(); } catch(e){ /* not loaded yet */ }
   });
   rebuildFilterLabels();
@@ -1587,6 +1611,13 @@ async function boot(){
   // importing needs a native file dialog and a backend restart, so in a browser
   // the button would be a promise the page cannot keep. It stays hidden there.
   if(window.desktop){
+    // The window remembers its language in localStorage, the shell remembers
+    // its own in settings.json, and until now only a click on the switch told
+    // the shell anything. Relaunching after choosing Chinese therefore came
+    // back as a Chinese window with an English tray menu. Announce it on every
+    // start; the handler ignores it when nothing changed.
+    if(window.desktop.setLanguage) window.desktop.setLanguage(LANG);
+
     const ib = document.getElementById('importDbBtn');
     if(ib){
       ib.style.display = '';

@@ -668,17 +668,37 @@ function showWindow() {
   mainWindow.focus();
 }
 
+/**
+ * Re-label the existing tray icon in the current language. Set by buildTray;
+ * null until the tray exists.
+ */
+let refreshTray = null;
+
 function buildTray(userData) {
+  // A Tray is a live shell icon, not a value. Constructing a second one adds a
+  // second icon to the notification area — it does NOT replace the first, and
+  // dropping the old reference does not remove it either, because the shell
+  // still owns it. The language handler used to call this function to pick up
+  // the new strings, so switching en → zh → en left three icons sitting in the
+  // tray, two of them stale and menu-labelled in the wrong language. What that
+  // path actually wanted was refreshTray(). This guard stays so a future caller
+  // cannot reintroduce the same bug.
+  if (tray) { tray.destroy(); tray = null; }
+
   const image = fs.existsSync(ICON)
     ? nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 })
     : nativeImage.createEmpty();
 
   tray = new Tray(image);
-  // The standing reminder that closing the window did not quit the app. The
-  // one-time notification tells you once; this is here every time you look.
-  tray.setToolTip(`Horizon Holdings ${app.getVersion()} — ${tr('tooltip')}`);
+  // Logged because duplicate tray icons are only visible by eye. If this line
+  // ever appears twice in one session, the bug above is back.
+  log('tray icon created');
 
   const refreshMenu = () => {
+    // The standing reminder that closing the window did not quit the app. The
+    // one-time notification tells you once; this is here every time you look.
+    // Rebuilt with the menu so it follows the language too.
+    tray.setToolTip(`Horizon Holdings ${app.getVersion()} — ${tr('tooltip')}`);
     const openAtLogin = app.getLoginItemSettings().openAtLogin;
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: tr('show'), click: showWindow },
@@ -722,6 +742,7 @@ function buildTray(userData) {
     ]));
   };
 
+  refreshTray = refreshMenu;
   refreshMenu();
   tray.on('double-click', showWindow);
 }
@@ -782,7 +803,9 @@ if (!app.requestSingleInstanceLock()) {
       if (next === uiLang) return uiLang;
       uiLang = next;
       writeSettings(userData, { language: uiLang });
-      if (tray) buildTray(userData);
+      // Re-label the existing icon. Emphatically NOT buildTray() — that makes a
+      // second tray icon and leaves this one behind.
+      if (refreshTray) refreshTray();
       log(`language switched to ${uiLang}`);
       return uiLang;
     });
