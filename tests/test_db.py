@@ -209,26 +209,3 @@ def test_pence_migration_runs_once(db):
     assert db.prices_asof("2026-03-02")[uk]["close"] == 12.0, (
         "a second run must not divide again — the flag, not the values, decides")
     assert db.load_index_state()[0][uk] == 100_000
-
-
-def test_pence_migration_raises_a_notice_only_when_it_changed_something(db):
-    import universe as u
-
-    uk = u.pence_quoted()[0]
-    db.upsert_prices([{"date": "2026-03-02", "ticker": uk, "close": 1200.0}])
-    db.save_index_state({uk: 1_000}, {"GBP": 900.0})
-    db.set_meta(db.PENCE_MIGRATION_KEY, "")
-    db.set_meta(db.GBX_CASH_NOTICE_KEY, "")
-
-    db.init()
-    assert db.get_meta(db.GBX_CASH_NOTICE_KEY), (
-        "a database that actually held pence prices has an oversized GBP cash "
-        "pool, and the page should say so")
-
-
-def test_a_clean_database_gets_no_cash_notice(db):
-    # Nothing to migrate: no notice, or every new user sees a warning about a
-    # bug that never touched them.
-    db.set_meta(db.PENCE_MIGRATION_KEY, "")
-    db.init()
-    assert not db.get_meta(db.GBX_CASH_NOTICE_KEY)

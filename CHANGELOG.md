@@ -9,6 +9,34 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.10.3
+
+**Fixed**
+
+- **The cash-pool note added in v1.10.2 never appeared for anyone it was written
+  for.** It was drawn from a flag the pence migration set — and the migration
+  only runs on a database that has not already been migrated. Anyone who took
+  v1.10.1 promptly therefore had the fix, no flag, and no explanation; the only
+  way to see the note was to skip v1.10.1 entirely. It shipped tested, because
+  every test constructed an unmigrated database and then migrated it, which is
+  the one path where the flag is raised.
+
+  The note is now **measured rather than flagged**. Buying whole shares leaves a
+  remainder between zero and one share's price, so half the sum of the prices is
+  the pool to expect; every currency here sits between 0.5× and 1.7× of that,
+  and the pence bug leaves about 90×. Anything past 10× is explained.
+
+  Deriving the condition removes the clearing logic as well: after a rebalance
+  the pool is rebuilt and the ratio falls back to about one, so the note goes
+  because the condition ended, not because something reset a key. The flag, and
+  the hook in `index_engine` that cleared it, are gone.
+
+  Four tests cover the property that made the failure possible, including one
+  that puts a database in exactly the state of an already-migrated install and
+  asserts the note still shows.
+
+---
+
 ## v1.10.2
 
 **Added**

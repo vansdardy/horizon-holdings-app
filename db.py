@@ -139,12 +139,6 @@ def init():
 
 PENCE_MIGRATION_KEY = "gbx_normalised"
 
-# Raised by the migration on a database that actually held pence prices, and
-# lowered by index_engine the next time the index rebalances — which is when the
-# oversized cash pool it warns about is reinvested. A self-clearing notice: no
-# date to hardcode, and nothing anyone has to remember to remove.
-GBX_CASH_NOTICE_KEY = "gbx_cash_notice"
-
 
 def _migrate_pence_quotes():
     """
@@ -201,13 +195,12 @@ def _migrate_pence_quotes():
                 f"UPDATE prices SET close = close / 100.0 WHERE ticker IN ({marks})", tickers)
             c.execute(
                 f"UPDATE index_holdings SET shares = shares * 100 WHERE ticker IN ({marks})", tickers)
+            # Cash pools are NOT rescaled — they were always real pounds. The
+            # GBP one is left oversized, and the page detects that by measuring
+            # it rather than by being told; see the cash_notice block in
+            # server.api_index_holdings for why a flag was the wrong mechanism.
             print(f"[migrate] GBX->GBP: {rows} price rows scaled, {held} holdings rescaled "
                   f"({', '.join(tickers)}); NAV unchanged by construction")
-            # The cash pools are NOT rescaled — they were always real pounds —
-            # but the GBP one is oversized, because buying at a hundred-times
-            # price rounded down in hundred-times steps. Flag it so the page can
-            # say so until the next rebalance reinvests it.
-            _set_meta(c, GBX_CASH_NOTICE_KEY, "1")
 
     set_meta(PENCE_MIGRATION_KEY, "1")
 

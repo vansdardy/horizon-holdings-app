@@ -502,28 +502,42 @@ def api_index_holdings():
     # filled by rounding down in hundred-times steps. Nothing is wrong with the
     # number — those are real pounds and the NAV counts them — but it is not the
     # number a correct allocation would have produced, so the page says so until
-    # the next rebalance reinvests it. index_engine clears the flag at that point.
+    # the next rebalance reinvests it.
+    #
+    # Measured, not flagged. The first version of this asked a meta key that the
+    # migration set — which meant it could only ever be raised on a database that
+    # had not already been migrated, so every user who took the previous release
+    # promptly got the fix and never got the explanation. The condition is
+    # directly observable, so observe it: buying whole shares leaves a residual
+    # between zero and one share's price, making half the sum of the prices the
+    # expected pool. Real pools land within a factor of two of that (every other
+    # currency here sits between 0.5x and 1.7x); the pence bug leaves about 90x.
+    # Ten times is far outside honest variation and far below the symptom.
+    #
+    # Deriving it also removes the need to clear anything: after a rebalance the
+    # pool is rebuilt from scratch and the ratio falls back to about one, so the
+    # notice disappears because the condition did, not because a flag was reset.
     cash_notice = None
-    if db.get_meta(db.GBX_CASH_NOTICE_KEY):
-        pence_names = [t for t in u.pence_quoted() if prices.get(t)]
-        # Buying whole shares leaves a residual somewhere between zero and one
-        # share's price, so half the sum of the prices is what to expect.
+    pence_names = [t for t in u.pence_quoted() if prices.get(t)]
+    if pence_names:
         typical = sum(prices[t]["close"] for t in pence_names) / 2.0
         actual = cash.get("GBP", 0.0)
-        excess_usd = None
-        try:
-            excess_usd = index_engine.to_usd(max(actual - typical, 0.0), "GBP", fx)
-        except ValueError:
-            pass
-        cash_notice = {
-            "reason": "gbx_migration",
-            "ccy": "GBP",
-            "amount": actual,
-            "typical": typical,
-            "excess": max(actual - typical, 0.0),
-            "excess_pct_of_nav": (excess_usd / nav_usd) if (excess_usd and nav_usd) else 0.0,
-            "clears_on": "next annual rebalance",
-        }
+        if typical > 0 and actual > 10.0 * typical:
+            excess_usd = None
+            try:
+                excess_usd = index_engine.to_usd(actual - typical, "GBP", fx)
+            except ValueError:
+                pass
+            cash_notice = {
+                "reason": "gbx_migration",
+                "ccy": "GBP",
+                "amount": actual,
+                "typical": typical,
+                "excess": actual - typical,
+                "ratio": actual / typical,
+                "excess_pct_of_nav": (excess_usd / nav_usd) if (excess_usd and nav_usd) else 0.0,
+                "clears_on": "next annual rebalance",
+            }
 
     return {
         "seeded": True,

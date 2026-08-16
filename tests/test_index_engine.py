@@ -203,22 +203,3 @@ def test_simulate_touches_no_stored_state(db, fx, prices):
     assert len(series) == 2
     assert series[0]["nav_per_share"] == pytest.approx(50.0, rel=1e-9)
     assert db.nav_history() == before, "simulation must not write anything"
-
-
-def test_rebalancing_takes_down_the_gbx_cash_notice(db, fx, prices):
-    """The notice is about an oversized cash pool, and a rebalance reinvests
-    every pool from scratch out of the whole NAV. Tying its removal to that
-    event rather than to a date means it goes when the condition goes."""
-    import index_engine as ie
-
-    ie.update("2026-06-01", prices, fx)
-    db.set_meta(db.GBX_CASH_NOTICE_KEY, "1")      # as the migration would leave it
-
-    ie.update("2026-06-02", prices, fx)
-    assert db.get_meta(db.GBX_CASH_NOTICE_KEY) == "1", (
-        "an ordinary day must not clear it — the pool has not been reinvested")
-
-    r = ie.update("2027-01-04", prices, fx)       # first session of a new year
-    assert r["rebalanced"] is True
-    assert not db.get_meta(db.GBX_CASH_NOTICE_KEY), (
-        "the rebalance reinvested the cash, so the notice must go with it")

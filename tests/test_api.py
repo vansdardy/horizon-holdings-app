@@ -215,3 +215,88 @@ def test_holdings_weights_are_shares_of_the_same_nav(client):
     cash_pct = book["totals"]["cash_pct"]
     assert total + cash_pct == pytest.approx(1.0, abs=1e-9), (
         "actual weights plus cash must account for the whole fund")
+
+
+# ---------------------------------------------------- the oversized GBP pool
+# The pence bug left the pound cash pool about ninety times larger than buying
+# whole shares should leave. The page explains that until a rebalance reinvests
+# it — and the explanation has to be driven by MEASURING the pool, not by a flag
+# the migration sets.
+#
+# The flag version shipped in v1.10.2 and reached nobody it was written for: it
+# could only be raised while migrating, so anyone who had taken the previous
+# release already carried a migrated database and never saw a word. These tests
+# pin the property that made that failure possible.
+
+def _seed_with_gbp_cash(client, gbp_cash):
+    """Seed the index, then set the GBP pool to a chosen size."""
+    import db as db_module
+    client.post("/api/refresh?window=3")
+    holdings, cash = db_module.load_index_state()
+    cash["GBP"] = gbp_cash
+    db_module.save_index_state(holdings, cash)
+
+
+def test_an_oversized_pound_pool_is_explained(client):
+    import universe as u
+    import db as db_module
+
+    client.post("/api/refresh?window=3")
+    prices = db_module.prices_asof(db_module.latest_price_date())
+    typical = sum(prices[t]["close"] for t in u.pence_quoted() if t in prices) / 2.0
+    _seed_with_gbp_cash(client, typical * 90)      # the size the bug leaves
+
+    note = client.get("/api/index_holdings").json()["cash_notice"]
+    assert note is not None, "a pool ninety times too big must be explained"
+    assert note["ccy"] == "GBP"
+    assert note["ratio"] == pytest.approx(90.0, rel=0.05)
+    assert note["excess"] > 0
+
+
+def test_a_normal_pound_pool_is_not_explained(client):
+    import universe as u
+    import db as db_module
+
+    client.post("/api/refresh?window=3")
+    prices = db_module.prices_asof(db_module.latest_price_date())
+    typical = sum(prices[t]["close"] for t in u.pence_quoted() if t in prices) / 2.0
+    _seed_with_gbp_cash(client, typical * 1.5)     # ordinary rounding scatter
+
+    assert client.get("/api/index_holdings").json()["cash_notice"] is None, (
+        "every currency's pool varies; only a pool far outside that range is a symptom")
+
+
+def test_the_explanation_does_not_depend_on_having_just_migrated(client):
+    """The bug in the first attempt: the notice was raised by the migration, so a
+    database migrated by an earlier release — which is every database belonging
+    to someone who updates promptly — never showed it."""
+    import universe as u
+    import db as db_module
+
+    client.post("/api/refresh?window=3")
+    prices = db_module.prices_asof(db_module.latest_price_date())
+    typical = sum(prices[t]["close"] for t in u.pence_quoted() if t in prices) / 2.0
+    _seed_with_gbp_cash(client, typical * 90)
+
+    # Exactly the state of a database migrated by the previous version: the
+    # migration has run and will never run again.
+    db_module.set_meta(db_module.PENCE_MIGRATION_KEY, "1")
+
+    assert client.get("/api/index_holdings").json()["cash_notice"] is not None, (
+        "the condition is still true, so it must still be explained")
+
+
+def test_the_explanation_goes_away_when_the_pool_is_reinvested(client):
+    """A rebalance rebuilds every pool out of the whole NAV, so the ratio falls
+    back to about one. Nothing has to be cleared — the condition simply ends."""
+    import universe as u
+    import db as db_module
+
+    client.post("/api/refresh?window=3")
+    prices = db_module.prices_asof(db_module.latest_price_date())
+    typical = sum(prices[t]["close"] for t in u.pence_quoted() if t in prices) / 2.0
+    _seed_with_gbp_cash(client, typical * 90)
+    assert client.get("/api/index_holdings").json()["cash_notice"] is not None
+
+    _seed_with_gbp_cash(client, typical * 0.8)     # what a rebalance leaves
+    assert client.get("/api/index_holdings").json()["cash_notice"] is None
