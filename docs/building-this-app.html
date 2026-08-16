@@ -113,13 +113,60 @@
   .rail a:hover{color:var(--gold);}
   .rail .n{font-family:var(--mono); font-size:11px; font-weight:600; padding-top:2px;}
 
-  /* ---------- flow ---------- */
+  /* ---------- flow ----------
+     The measure is capped on the TEXT, not on the sections that contain it.
+
+     This was written as `.flow > *{max-width:var(--col)}`, and the breakout
+     rules underneath it could therefore never fire: `.flow > figure` does not
+     match a figure inside `<section class="part">`, and even if it had, a child
+     cannot be wider than the parent capping it. So every diagram on this page —
+     each one drawn at 900px — was being displayed at 578, and every wide
+     comparison table was folded into a column meant for prose. The rules were
+     right about the intent and wrong about the shape of the document. */
   .flow{max-width:var(--wide);}
-  .flow > *{max-width:var(--col);}
-  .flow > figure,
-  .flow > .breakout,
-  .flow > pre,
-  .flow > .tablewrap{max-width:var(--wide);}
+  .flow > *{max-width:var(--wide);}
+
+  /* Prose keeps a readable measure wherever it sits. */
+  .flow > p,
+  .flow > .aside,
+  .masthead > *,
+  .part > *{max-width:var(--col);}
+
+  /* These earn the full column: diagrams, tables and code are not prose, and
+     shrinking them to a prose measure costs real information. */
+  .flow > figure, .flow > .breakout, .flow > pre, .flow > .tablewrap,
+  .part > figure, .part > .breakout, .part > pre, .part > .tablewrap{
+    max-width:var(--wide);
+  }
+
+  /* ---------- wide screens ----------
+     On a maximised window the page was a 578px ribbon of text with most of the
+     screen empty to its right, because a prose measure stays constant however
+     much room it is given. Two things use that room rather than leaving it:
+     the full-width elements above get more of it, and the asides move out of
+     the text into the margin beside it, which is where a note about a trap you
+     are about to hit belongs anyway. It also shortens the page, since those
+     boxes no longer interrupt the argument to sit in the middle of it. */
+  @media (min-width:1500px){
+    :root{--wide:1140px;}
+    .shell{max-width:1500px;}
+
+    .part > .aside{
+      float:right;
+      clear:right;
+      width:322px;
+      /* Sits in the gap between the measure and the full width, so it never
+         narrows the prose it annotates. */
+      margin:6px 0 22px 46px;
+    }
+    /* Full-width elements must start below any note still floating beside the
+       text, or a 1140px table would run underneath a 322px box. */
+    .part > figure,
+    .part > .tablewrap,
+    .part > pre{clear:both;}
+    /* A section ends where its content ends, floats included. */
+    .part::after{content:""; display:block; clear:both;}
+  }
 
   header.masthead{padding:96px 0 0;}
   .eyebrow{
@@ -342,7 +389,7 @@
         <span><b>HTML</b> interface</span>
         <span><b>Electron</b> shell</span>
         <span><b>~3,400</b> lines total</span>
-        <span><b>v1.9.1</b> shipped</span>
+        <span><b>v1.9.2</b> shipped</span>
       </div>
     </header>
 
@@ -3979,7 +4026,7 @@ Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
     </section>
 
     <footer class="colophon">
-      Horizon Holdings v1.9.1 — a local portfolio NAV service.<br>
+      Horizon Holdings v1.9.2 — a local portfolio NAV service.<br>
       Python 3.12 · FastAPI · SQLite · Electron 33 · PyInstaller.<br>
       Set in Source Serif 4 and IBM Plex Mono, the same faces the application uses.<br>
       This document ships inside the app and is served at <code>/guide</code>.

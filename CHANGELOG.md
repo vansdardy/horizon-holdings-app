@@ -9,6 +9,40 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.9.2
+
+**Fixed**
+
+- **The build guide wasted most of a maximised window, and had been shrinking
+  its own diagrams.** The stylesheet said figures, tables and code blocks should
+  break out of the prose column to the full width. They never did. The selectors
+  were written `.flow > figure`, but a figure lives inside
+  `<section class="part">`, not directly in `.flow` — and the rule above capped
+  `.flow > *`, the sections themselves, at the reading measure, so nothing
+  inside one could have been wider even had the selector matched.
+
+  Nothing about that fails visibly; the page just looks deliberate and the
+  diagrams look small. Every diagram in the guide is drawn at 900px and was
+  being displayed at 578 — a third of the detail thrown away — and the wide
+  comparison tables were folded into a column meant for prose.
+
+  Diagrams, tables and code now use the full column: 1140px on a wide screen,
+  835px in the app's own guide window, up from 578 everywhere.
+
+**Changed**
+
+- **On screens wider than 1500px the asides move into the margin** beside the
+  text they annotate, rather than interrupting the argument to sit in the middle
+  of it. They were already the "did you know" boxes — *The thing that will
+  confuse you first*, *What you do not need yet* — so the empty space is filled
+  with the writing that most wants to be there, not with filler.
+
+  Body text stays at 66 characters per line at every width. That is the measure
+  a reader can actually follow, and widening it to fill a monitor would make the
+  page worse, not more balanced.
+
+---
+
 ## v1.9.1
 
 **Fixed**
