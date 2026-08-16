@@ -407,6 +407,116 @@ def api_refresh(day_offset: int = 0, window: int = 1):
         raise HTTPException(500, f"fetch failed: {e}")
 
 
+@app.get("/api/index_holdings")
+def api_index_holdings():
+    """
+    The index's actual book: how many shares of each constituent it holds, and
+    the cash left over in each currency.
+
+    This exists to make NAV checkable rather than merely reported. The index buys
+    whole shares only, so every position leaves a residual that stays as cash in
+    the currency it was left in — and those two things together, marked at the
+    latest close, are the whole of NAV. Publishing the ledger means a reader can
+    add it up themselves instead of trusting the total.
+
+    Valuation deliberately mirrors index_engine._mark rather than reimplementing
+    it: same forward-filled prices (`prices_asof`), same FX, same USD numeraire.
+    A second, subtly different valuation here would produce numbers that almost
+    agree with the NAV series, which is worse than none.
+    """
+    holdings, cash = db.load_index_state()
+    asof = db.latest_price_date()
+
+    if not holdings or not asof:
+        return {"seeded": False, "as_of": asof, "base_ccy": u.BASE_CCY,
+                "holdings": [], "cash": [], "unpriced": [], "totals": {}}
+
+    prices = db.prices_asof(asof)
+    fx = db.fx_asof(asof)
+    weights = u.target_weights()
+
+    def to_base(amount_usd):
+        """None rather than an exception: a missing base rate must not 500 the
+        whole ledger, it just means the base-currency column cannot be filled."""
+        if amount_usd is None:
+            return None
+        try:
+            return index_engine.to_base(amount_usd, fx)
+        except ValueError:
+            return None
+
+    rows, equity_usd, unpriced = [], 0.0, []
+    for t, n in sorted(holdings.items()):
+        meta = u.UNIVERSE.get(t)
+        if meta is None:
+            # A ticker the universe no longer carries. _mark ignores these too;
+            # the next rebalance rebuilds holdings from the current universe.
+            continue
+        quote = prices.get(t)
+        close = quote["close"] if quote else None
+        value_local = close * n if close is not None else None
+        value_usd = None
+        if value_local is not None:
+            try:
+                value_usd = index_engine.to_usd(value_local, meta["ccy"], fx)
+            except ValueError:
+                value_usd = None
+        if n and value_usd is None:
+            unpriced.append(t)
+        if value_usd:
+            equity_usd += value_usd
+        rows.append({
+            "ticker": t,
+            "name": meta["name"], "name_en": meta["name_en"],
+            "country": meta["country"], "country_en": meta["country_en"],
+            "ccy": meta["ccy"],
+            "shares": n,
+            "price": close,
+            "price_date": quote["date"] if quote else None,
+            "value_local": value_local,
+            "value_usd": value_usd,
+            "value_base": to_base(value_usd),
+            "target_weight": weights.get(t, 0.0),
+        })
+
+    cash_rows, cash_usd = [], 0.0
+    for ccy, amount in sorted(cash.items()):
+        try:
+            amount_usd = index_engine.to_usd(amount, ccy, fx)
+        except ValueError:
+            amount_usd = None
+        if amount_usd:
+            cash_usd += amount_usd
+        cash_rows.append({"ccy": ccy, "amount": amount, "amount_usd": amount_usd,
+                          "amount_base": to_base(amount_usd)})
+
+    nav_usd = equity_usd + cash_usd
+    for r in rows:
+        r["actual_weight"] = (r["value_usd"] / nav_usd) if (r["value_usd"] and nav_usd) else 0.0
+
+    nav_base = to_base(nav_usd)
+    shares_out = u.SHARES_OUTSTANDING
+    return {
+        "seeded": True,
+        "as_of": asof,
+        "base_ccy": u.BASE_CCY,
+        "numeraire": u.NUMERAIRE,
+        "shares_outstanding": shares_out,
+        "holdings": rows,
+        "cash": cash_rows,
+        "unpriced": unpriced,
+        "totals": {
+            "equity_usd": equity_usd, "cash_usd": cash_usd, "nav_usd": nav_usd,
+            "equity_base": to_base(equity_usd), "cash_base": to_base(cash_usd),
+            "nav_base": nav_base,
+            "cash_pct": (cash_usd / nav_usd) if nav_usd else 0.0,
+            "nav_per_share": (nav_usd / shares_out) if shares_out else None,
+            "nav_per_share_base": (nav_base / shares_out) if (nav_base and shares_out) else None,
+            "n_holdings": sum(1 for r in rows if r["shares"]),
+        },
+    }
+
+
 @app.get("/api/nav")
 def api_nav():
     pd = db.price_dates()

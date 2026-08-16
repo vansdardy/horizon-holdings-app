@@ -140,6 +140,12 @@ window.addEventListener('DOMContentLoaded', function(){
     0%{ transform: translateX(0); }
     100%{ transform: translateX(-50%); }
   }
+  /* Stop the tape while it is being read. A ticker that keeps moving under the
+     cursor forces the reader to chase a row, and the one they wanted has left
+     the screen by the time they find it. Focus-within covers keyboard users,
+     who cannot hover at all. */
+  .ticker-wrap:hover .ticker-track,
+  .ticker-wrap:focus-within .ticker-track{ animation-play-state: paused; }
   @media (prefers-reduced-motion: reduce){
     .ticker-track{ animation: none; }
   }
@@ -441,7 +447,10 @@ window.addEventListener('DOMContentLoaded', function(){
 </head>
 <body>
 
-<div class="ticker-wrap"><div class="ticker-track" id="tickerTrack"></div></div>
+<!-- tabindex makes the tape focusable, which is what gives :focus-within
+     something to match: without a focusable element inside it, that half of the
+     pause rule would never fire and keyboard users could never stop the tape. -->
+<div class="ticker-wrap" tabindex="0" data-i18n-title="ticker.pauseHint" title="Hover or focus to pause"><div class="ticker-track" id="tickerTrack"></div></div>
 
 <header>
   <div class="eyebrow">PORTFOLIO CONSTRUCTION · 20&ndash;30 YEAR HORIZON</div>
@@ -576,6 +585,49 @@ python server.py            # → http://127.0.0.1:8000</pre>
       <div class="chart-card" style="margin-top:4px;">
         <h3><span data-i18n="nav.chartTitle">NAV per unit</span> <span id="navCcyLabel"></span></h3>
         <canvas id="navChart"></canvas>
+      </div>
+
+      <!-- The ledger the chart above is computed from. Kept inside the NAV
+           section deliberately: it is the working, not a separate topic. -->
+      <div id="holdBlock" style="margin-top:34px;">
+        <h3 style="font-family:var(--serif);font-size:19px;font-weight:600;margin-bottom:6px;"
+            data-i18n="hold.title">What the index actually holds</h3>
+        <div class="section-desc" data-i18n-html="hold.desc"></div>
+        <div id="holdMeta" style="font-family:var(--mono);font-size:11px;color:var(--text-faint);margin-bottom:10px;"></div>
+        <div id="holdKpis" class="kpi-row" style="margin-bottom:16px;"></div>
+        <div id="holdWarn" class="status-msg" style="margin-bottom:8px;"></div>
+        <div class="table-wrap">
+          <table class="hold-table">
+            <thead>
+              <tr>
+                <th data-i18n="th.ticker">Ticker</th>
+                <th data-i18n="th.company">Company</th>
+                <th class="num" data-i18n="hold.thShares">Shares held</th>
+                <th class="num"><span data-i18n="hold.thPrice">Price</span><div style="font-weight:400;opacity:.6" data-i18n="posTh.local">local</div></th>
+                <th class="num"><span data-i18n="hold.thValue">Market value</span><div style="font-weight:400;opacity:.6" id="holdCcyHdr">—</div></th>
+                <th class="num" data-i18n="hold.thActual">Weight</th>
+                <th class="num" data-i18n="hold.thTarget">Target</th>
+              </tr>
+            </thead>
+            <tbody id="holdBody"></tbody>
+          </table>
+        </div>
+        <h3 style="font-family:var(--serif);font-size:17px;font-weight:600;margin:26px 0 8px;"
+            data-i18n="hold.cashTitle">Cash left over</h3>
+        <div class="table-wrap" style="max-height:none;">
+          <table class="cash-table">
+            <thead>
+              <tr>
+                <th data-i18n="hold.thCcy">Currency</th>
+                <th class="num" data-i18n="hold.thAmount">Amount</th>
+                <th class="num"><span data-i18n="hold.thValue">Market value</span><div style="font-weight:400;opacity:.6" id="holdCashCcyHdr">—</div></th>
+              </tr>
+            </thead>
+            <tbody id="holdCashBody"></tbody>
+          </table>
+        </div>
+        <div style="font-family:var(--mono);font-size:10.5px;color:var(--text-faint);margin-top:10px;"
+             data-i18n="hold.rounding"></div>
       </div>
     </div>
   </section>
@@ -1249,6 +1301,76 @@ function renderNav(){
   }catch(e){ $('navResults').style.display='none'; }
 }
 
+/* ---------------- the index's own book ---------------- */
+// Loaded once and kept, so a language switch re-renders from the same numbers
+// rather than re-fetching them.
+let HOLD = null;
+
+async function loadHoldings(){
+  try{
+    HOLD = await api('/api/index_holdings');
+  }catch(e){
+    HOLD = null;
+  }
+  renderHoldings();
+}
+
+function renderHoldings(){
+  const box = $('holdBlock');
+  if(!box) return;
+  if(!HOLD || !HOLD.seeded){
+    // Not an error: a database that has never fetched has no holdings yet.
+    $('holdMeta').textContent = HOLD ? t('hold.notSeeded') : '';
+    $('holdBody').innerHTML = '';
+    $('holdCashBody').innerHTML = '';
+    $('holdKpis').innerHTML = '';
+    $('holdWarn').textContent = '';
+    return;
+  }
+
+  const IB = HOLD.base_ccy || 'CHF';
+  const isym = (CCY_SYMBOL[IB] || IB + ' ');
+  const T = HOLD.totals;
+  ['holdCcyHdr','holdCashCcyHdr'].forEach(id => { const el = $(id); if(el) el.textContent = '(' + IB + ')'; });
+
+  $('holdMeta').textContent = t('hold.asOf', {d: HOLD.as_of});
+
+  const big = v => v == null ? '—' : isym + (v/1e9).toFixed(3) + 'B';
+  $('holdKpis').innerHTML = [
+    [t('hold.equity'), big(T.equity_base), t('hold.count', {n: T.n_holdings})],
+    [t('hold.cash'),   big(T.cash_base),   t('hold.cashPct', {v: fmtPct(T.cash_pct, 4)})],
+    [t('hold.nav'),    big(T.nav_base),    t('hold.perShare') + ' ' + isym + (T.nav_per_share_base != null ? T.nav_per_share_base.toFixed(2) : '—')],
+  ].map(([l,v,s]) =>
+    `<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${s}</div></div>`).join('');
+
+  // A held position with no price is valued at zero, which understates every
+  // weight on the page. Say so rather than letting the table look complete.
+  const un = HOLD.unpriced || [];
+  $('holdWarn').textContent = un.length ? t('hold.unpriced', {n: un.length, t: un.join(', ')}) : '';
+  $('holdWarn').className = un.length ? 'status-msg err' : 'status-msg';
+
+  // Largest first: the top of this table is where most of the NAV is.
+  const rows = HOLD.holdings.slice().sort((a,b) => (b.value_base||0) - (a.value_base||0));
+  $('holdBody').innerHTML = rows.map(h => `
+    <tr${h.shares ? '' : ' class="muted-row"'}>
+      <td class="tk">${h.ticker}</td>
+      <td>${LANG === 'zh' ? h.name : (h.name_en || h.name)}
+        <div style="font-size:10px;color:var(--text-faint);font-family:var(--mono)">${dispCountry(h.country)} · ${h.ccy}</div></td>
+      <td class="num">${h.shares.toLocaleString()}</td>
+      <td class="num">${h.price == null ? '—' : money(h.price, h.ccy)}</td>
+      <td class="num">${h.value_base == null ? '—' : money(h.value_base, IB)}</td>
+      <td class="num">${fmtPct(h.actual_weight, 3)}</td>
+      <td class="num" style="color:var(--text-dim)">${fmtPct(h.target_weight, 3)}</td>
+    </tr>`).join('');
+
+  $('holdCashBody').innerHTML = HOLD.cash.map(c => `
+    <tr>
+      <td class="tk">${c.ccy}</td>
+      <td class="num">${money(c.amount, c.ccy)}</td>
+      <td class="num">${c.amount_base == null ? '—' : money(c.amount_base, IB)}</td>
+    </tr>`).join('');
+}
+
 /* ---------------- positions ---------------- */
 // ---- timeframe + simulation controls ----
 document.querySelectorAll('.tf-btn').forEach(b => {
@@ -1676,7 +1798,7 @@ function setLang(lang){
   // labels stayed in the old language while the rest of the page switched.
   [rebuildEffectiveData, renderKPIs, renderValueMap, applyFiltersAndRender,
    renderTicker, renderNav, renderPosTable, renderCash, renderPosKpis,
-   renderSectorChart, renderCountryChart, renderSectorDrift,
+   renderSectorChart, renderCountryChart, renderSectorDrift, renderHoldings,
    loadStatus].forEach(fn => {
     try { if(typeof fn === 'function') fn(); } catch(e){ /* not loaded yet */ }
   });
@@ -1751,7 +1873,7 @@ async function boot(){
   }
 
   const s = await loadStatus();
-  if(s){ await loadNav(); await loadPositions(); await loadTickerPrices(); }
+  if(s){ await loadNav(); await loadHoldings(); await loadPositions(); await loadTickerPrices(); }
   await loadFundamentals();
 }
 boot();

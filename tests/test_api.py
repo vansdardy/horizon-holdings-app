@@ -159,3 +159,59 @@ def test_price_history_csv_is_well_formed(client):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     assert r.text.splitlines()[0] == "date,ticker,close,ccy"
+
+
+# ------------------------------------------------------- the index's own book
+# These exist because the holdings endpoint publishes numbers a reader is
+# invited to add up. If its arithmetic drifts from the NAV series by even a
+# little, the page invites them to catch the application in an inconsistency —
+# which is worse than never having shown the ledger at all.
+
+def test_holdings_are_empty_before_the_index_is_seeded(client):
+    body = client.get("/api/index_holdings").json()
+    assert body["seeded"] is False
+    assert body["holdings"] == [] and body["cash"] == []
+
+
+def test_holdings_reconcile_with_the_published_nav(client):
+    client.post("/api/refresh?window=3")
+    book = client.get("/api/index_holdings").json()
+    nav = client.get("/api/nav").json()
+
+    assert book["seeded"] is True
+    latest = nav["history"][-1]
+    assert book["as_of"] == latest["date"], "the ledger must be marked on the NAV's own date"
+
+    # The whole promise of the section: securities + cash IS the NAV.
+    rows = sum(h["value_usd"] or 0 for h in book["holdings"])
+    cash = sum(c["amount_usd"] or 0 for c in book["cash"])
+    assert rows + cash == pytest.approx(book["totals"]["nav_usd"], rel=1e-12)
+    assert book["totals"]["nav_usd"] == pytest.approx(latest["nav_usd"], rel=1e-9)
+    assert book["totals"]["nav_base"] == pytest.approx(latest["nav_base"], rel=1e-9)
+    assert book["totals"]["nav_per_share_base"] == pytest.approx(
+        latest["nav_per_share"], rel=1e-9), "per-unit NAV is quoted in the base currency"
+
+
+def test_holdings_are_whole_shares_with_the_remainder_in_cash(client):
+    client.post("/api/refresh?window=3")
+    book = client.get("/api/index_holdings").json()
+
+    assert len(book["holdings"]) == 78
+    for h in book["holdings"]:
+        assert isinstance(h["shares"], int), f"{h['ticker']} holds a fractional share"
+
+    # Every currency the index bought in keeps a residual cash pool, and no
+    # residual can be negative: that would mean it spent money it did not have.
+    assert book["cash"], "buying whole shares must leave a remainder somewhere"
+    for c in book["cash"]:
+        assert c["amount"] >= 0, f"{c['ccy']} cash went negative"
+
+
+def test_holdings_weights_are_shares_of_the_same_nav(client):
+    client.post("/api/refresh?window=3")
+    book = client.get("/api/index_holdings").json()
+
+    total = sum(h["actual_weight"] for h in book["holdings"])
+    cash_pct = book["totals"]["cash_pct"]
+    assert total + cash_pct == pytest.approx(1.0, abs=1e-9), (
+        "actual weights plus cash must account for the whole fund")

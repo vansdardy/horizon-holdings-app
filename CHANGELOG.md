@@ -9,6 +9,35 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.10.0
+
+**Added**
+
+- **The index's actual book, under the NAV chart.** Every constituent with the
+  number of shares the index holds, its price, market value and weight against
+  target — plus the cash left over in each of the seven currencies. The index
+  buys whole shares only, so every position leaves a remainder that stays as
+  cash in the currency it was left in, and holdings plus that cash, marked at
+  the latest close, *is* the NAV.
+
+  The point is that the number can now be checked rather than trusted. A new
+  `/api/index_holdings` endpoint publishes the ledger, valued through the same
+  code path as the NAV series itself — the same forward-filled prices, the same
+  FX, the same USD numeraire — because a second, subtly different valuation
+  would produce figures that almost agree, which is worse than showing nothing.
+
+  Four tests hold it to that: securities plus cash equals the published NAV to
+  within floating-point noise, the ledger is marked on the NAV's own date, every
+  holding is a whole number of shares with a non-negative cash remainder, and
+  the weights plus cash account for the whole fund. Measured against the real
+  series, the two agree to about 1 part in 10^16.
+
+- **The ticker tape stops while you read it.** Hovering pauses it; so does
+  focusing it, since the tape is now reachable by keyboard and someone who
+  cannot use a mouse could not stop it at all before.
+
+---
+
 ## v1.9.2
 
 **Fixed**
