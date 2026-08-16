@@ -17,7 +17,7 @@
 
 const { app, BrowserWindow, Tray, Menu, dialog, shell, nativeImage, Notification, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 const http = require('http');
 const net = require('net');
 const path = require('path');
@@ -1008,6 +1008,80 @@ function showAbout(userData) {
   });
 }
 
+// ------------------------------------------------------------ start at login
+/**
+ * Autostart, owned outright on Windows rather than delegated to Electron.
+ *
+ * The symptom was a tray checkbox that never showed a tick no matter how often
+ * it was clicked, so the setting was genuinely on and there was no way to see
+ * it. The cause is worth writing down, because "pass the same args to the
+ * getter" is the obvious fix and it does not work.
+ *
+ * Windows stores autostart as a command line in the Run key. Electron writes
+ * this app's entry UNQUOTED:
+ *
+ *     T:\Software\Horizon\Horizon Holdings\Horizon Holdings.exe --hidden
+ *
+ * and the installation path contains spaces, so when Electron reads the key
+ * back and tries to split that line into an executable and its arguments, it
+ * cannot. `getLoginItemSettings()` returns `launchItems: []` — it does not see
+ * the entry at all, let alone disagree about its arguments — and therefore
+ * reports openAtLogin: false for an entry that is sitting in the registry
+ * working. Any app whose install path contains a space has this, which on
+ * Windows is most of them.
+ *
+ * So this reads and writes the value itself, quoting the path properly. Writing
+ * it also repairs the unquoted entry Electron left behind, since an unquoted
+ * path with spaces relies on Windows guessing where the executable name ends.
+ * Other platforms keep Electron's API, which is fine there and is the only
+ * thing that works on macOS.
+ */
+const APP_USER_MODEL_ID = 'com.horizonholdings.desktop';
+const LOGIN_ITEM_ARGS = ['--hidden'];   // start into the tray, not into a window
+const LOGIN_RUN_KEY =
+  ['HKCU', 'Software', 'Microsoft', 'Windows', 'CurrentVersion', 'Run'].join('\\');
+
+/** The Run value is named after the AppUserModelId, which is what Electron used. */
+const LOGIN_VALUE_NAME = APP_USER_MODEL_ID;
+
+function loginCommandLine() {
+  return `"${process.execPath}" ${LOGIN_ITEM_ARGS.join(' ')}`;
+}
+
+function startsAtLogin() {
+  if (process.platform !== 'win32') {
+    return app.getLoginItemSettings({ args: LOGIN_ITEM_ARGS }).openAtLogin;
+  }
+  try {
+    execFileSync('reg', ['query', LOGIN_RUN_KEY, '/v', LOGIN_VALUE_NAME],
+                 { encoding: 'utf8', windowsHide: true });
+    return true;
+  } catch (err) {
+    // reg exits non-zero when the value does not exist, which is the normal
+    // "off" case rather than a failure worth reporting.
+    return false;
+  }
+}
+
+function setStartsAtLogin(enabled) {
+  try {
+    if (process.platform !== 'win32') {
+      app.setLoginItemSettings({ openAtLogin: enabled, args: LOGIN_ITEM_ARGS });
+    } else if (enabled) {
+      execFileSync('reg', ['add', LOGIN_RUN_KEY, '/v', LOGIN_VALUE_NAME,
+                           '/t', 'REG_SZ', '/d', loginCommandLine(), '/f'],
+                   { windowsHide: true });
+    } else {
+      execFileSync('reg', ['delete', LOGIN_RUN_KEY, '/v', LOGIN_VALUE_NAME, '/f'],
+                   { windowsHide: true });
+    }
+  } catch (err) {
+    log(`could not change start-at-login: ${err.message}`);
+  }
+  // Report what the registry says now, not what was asked for.
+  log(`start at login -> requested ${enabled}, reads back ${startsAtLogin()}`);
+}
+
 /**
  * Re-label the existing tray icon in the current language. Set by buildTray;
  * null until the tray exists.
@@ -1051,7 +1125,7 @@ function buildTray(userData) {
     // one-time notification tells you once; this is here every time you look.
     // Rebuilt with the menu so it follows the language too.
     tray.setToolTip(`Horizon Holdings ${app.getVersion()} — ${tr('tooltip')}`);
-    const openAtLogin = app.getLoginItemSettings().openAtLogin;
+    const openAtLogin = startsAtLogin();
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: tr('show'), click: showWindow },
       { type: 'separator' },
@@ -1093,11 +1167,11 @@ function buildTray(userData) {
         type: 'checkbox',
         checked: openAtLogin,
         click: menuItem => {
-          app.setLoginItemSettings({
-            openAtLogin: menuItem.checked,
-            args: ['--hidden'],   // start into the tray, not into a window
-          });
-          refreshMenu();
+          setStartsAtLogin(menuItem.checked);
+          // Rebuild from what the registry actually says afterwards, not from
+          // what was just clicked. If the write silently failed, the tick
+          // should go back to reflecting reality rather than the intention.
+          refreshUi();
         },
       },
       { type: 'separator' },
@@ -1122,7 +1196,7 @@ if (!app.requestSingleInstanceLock()) {
     // Without this, Windows attributes notifications to "electron.app.…" and may
     // not show them at all. It must match the appId electron-builder packages
     // with, or the packaged app and the dev run behave differently.
-    app.setAppUserModelId('com.horizonholdings.desktop');
+    app.setAppUserModelId(APP_USER_MODEL_ID);
 
     const userData = app.getPath('userData');
     userDataDir = userData;

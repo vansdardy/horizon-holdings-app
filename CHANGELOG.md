@@ -9,6 +9,37 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.9.1
+
+**Fixed**
+
+- **"Start at login" never showed a tick, whether it was on or off.** It is a
+  checkbox menu item and always was; what was broken is the state it read back.
+
+  Windows stores autostart as a command line in the registry, and Electron wrote
+  this app's entry *unquoted*:
+
+  ```
+  T:\Software\Horizon\Horizon Holdings\Horizon Holdings.exe --hidden
+  ```
+
+  The installation path contains spaces, so when Electron read the key back it
+  could not tell where the executable name ended. `getLoginItemSettings()`
+  returned `launchItems: []` — it did not see the entry at all — and so reported
+  the setting as off for an entry sitting in the registry working. Clicking the
+  item toggled the real setting correctly every time; only the tick was wrong,
+  which is the one part a user can see.
+
+  Autostart is now read and written directly on Windows, with the path properly
+  quoted. Writing it also repairs the unquoted entry left behind, since an
+  unquoted path with spaces leaves Windows guessing where the program name ends.
+  macOS and Linux keep Electron's API, which works correctly there.
+
+  Any application whose install path contains a space hits this, which on
+  Windows is most of them.
+
+---
+
 ## v1.9.0
 
 **Added**

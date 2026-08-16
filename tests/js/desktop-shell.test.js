@@ -118,6 +118,51 @@ test('the menu bar carries the commands people look for there', () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// Start at login.
+//
+// Windows stores autostart as a command line, and Electron reports the setting
+// by comparing that line against process.execPath plus whatever args you pass —
+// which default to none. Registering with --hidden and reading back without it
+// compared two different command lines, never matched, and reported "off" for
+// an entry that was working. The tray checkbox therefore never showed a tick,
+// so the one thing the user could see was the one thing that was wrong.
+//
+// The two calls only work if they agree, which is a thing source can be checked
+// for even though the registry cannot be reached from here.
+// ---------------------------------------------------------------------------
+
+test('the autostart state is read from the registry on Windows', () => {
+  const get = /function startsAtLogin\(\)[\s\S]*?\n}/.exec(CODE);
+  assert.ok(get, 'startsAtLogin() not found');
+
+  assert.match(get[0], /reg['"], \['query'|'query'/,
+    'on Windows the state must be read from the Run key directly. Electron ' +
+    "cannot parse back the unquoted entry it writes when the install path " +
+    'contains a space, and reports openAtLogin: false for a working entry.');
+  assert.match(get[0], /process\.platform !== 'win32'/,
+    'other platforms must keep Electron\'s API — it is the only thing that ' +
+    'works on macOS.');
+});
+
+test('the autostart command line quotes the executable path', () => {
+  const fn = /function loginCommandLine\(\)[\s\S]*?\n}/.exec(CODE);
+  assert.ok(fn, 'loginCommandLine() not found');
+  assert.match(
+    fn[0], /`"\$\{process\.execPath\}"/,
+    'the executable path must be quoted. Unquoted, a path containing spaces ' +
+    'leaves Windows guessing where the program name ends — and is what made ' +
+    'the setting unreadable in the first place.');
+});
+
+test('reading and writing autostart agree on one value name', () => {
+  assert.match(CODE, /const LOGIN_VALUE_NAME = APP_USER_MODEL_ID/,
+    'the Run value name must be shared, and must match the AppUserModelId ' +
+    'Electron used, or toggling creates a second entry beside the old one.');
+  assert.match(CODE, /setAppUserModelId\(APP_USER_MODEL_ID\)/,
+    'the same constant must be the one actually set on the app.');
+});
+
+// ---------------------------------------------------------------------------
 // Updates.
 //
 // The updater cannot be exercised here at all — it needs an installed build, a
