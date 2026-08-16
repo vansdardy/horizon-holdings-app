@@ -68,8 +68,13 @@ def fetch_live():
 
     def take(t, sym, s):
         resolved[t] = sym
+        # Normalise the quote unit to the listing's currency the moment the data
+        # arrives, so that everything downstream — valuation, share counts, the
+        # user's own positions — works in one unit. London quotes in pence; see
+        # universe.price_divisor for why nothing in the response reveals that.
+        div = u.price_divisor(t)
         for idx, val in s.items():
-            price_rows.append({"ticker": t, "close": float(val),
+            price_rows.append({"ticker": t, "close": float(val) / div,
                                "date": idx.date().isoformat()})
 
     unresolved = []

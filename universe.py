@@ -117,6 +117,42 @@ for _ticker, _entry in UNIVERSE.items():
 # Yahoo FX pairs: value = USD per 1 unit of the currency
 FX_PAIRS = {c: c + "USD=X" for c in sorted({v["ccy"] for v in UNIVERSE.values()} - {NUMERAIRE})}
 
+
+def price_divisor(ticker):
+    """
+    How many quote units make one unit of the listing's currency.
+
+    London is the reason this exists. The LSE quotes ordinary shares in **pence**
+    (GBX, 100 to the pound) and Yahoo passes that straight through, so AstraZeneca
+    comes back as 11708 — which is £117.08, not £11,708. Nothing in the response
+    says so: the batched download returns bare numbers, and `ccy` in this table
+    says GBP because GBP is genuinely the currency. The quote is simply in a
+    different unit from the currency it is denominated in.
+
+    Left uncorrected this is quietly poisonous. It does NOT move the index NAV,
+    because the same wrong price is used to decide how many shares to buy and to
+    value them afterwards, so the error cancels — which is exactly why it can sit
+    there for a long time looking fine. What it does corrupt is every number that
+    depends on the price ALONE: the share counts (a hundred times too few), the
+    shares-to-target arithmetic, and above all the market value of a real
+    position a user has typed in from a broker statement, which comes out a
+    hundred times too large.
+
+    Keyed on the Yahoo symbol rather than the exchange name, because the `.L`
+    suffix is what actually decides Yahoo's behaviour, and paired with the GBP
+    check so that a dollar- or euro-denominated London line would not be caught
+    by it.
+    """
+    meta = UNIVERSE[ticker]
+    if meta["yahoo"].endswith(".L") and meta["ccy"] == "GBP":
+        return 100.0
+    return 1.0
+
+
+def pence_quoted():
+    """The tickers price_divisor() applies to. Used by the database migration."""
+    return sorted(t for t in UNIVERSE if price_divisor(t) != 1.0)
+
 _TOTAL_SCORE = sum(v["score"] for v in UNIVERSE.values())
 
 def target_weights():

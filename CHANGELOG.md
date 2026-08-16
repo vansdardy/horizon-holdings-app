@@ -9,6 +9,47 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.10.1
+
+**Fixed**
+
+- **London prices were being stored in pence and labelled as pounds.** The LSE
+  quotes ordinary shares in GBX — 100 pence to the pound — and Yahoo passes that
+  straight through, so AstraZeneca arrived as `11708` and was recorded as
+  £11,708 rather than £117.08. Nothing in the response says which unit it is in:
+  the batched download returns bare numbers, and the currency genuinely *is*
+  GBP. Eight constituents were affected.
+
+  **The NAV was not wrong.** That is worth stating plainly, because it is the
+  first thing anyone assumes. The same inflated price decided how many shares to
+  buy *and* valued them afterwards, so the error cancelled exactly — measured on
+  the real database, UK holdings came to 8.6641% of the fund against a target of
+  8.6643%. That is also precisely why the bug could sit there looking healthy.
+
+  What it did corrupt is every figure that depends on the price alone:
+
+  - **Share counts a hundred times too small** — the index held 11,192 shares of
+    AstraZeneca where it should have held 1,119,200. Those counts became visible
+    for the first time in v1.10.0's holdings table.
+  - **The market value of any UK position you entered yourself would have come
+    out a hundred times too large**, since your real share count would have been
+    multiplied by a pence price treated as pounds. Nothing had been entered yet,
+    so no position data was affected.
+  - Shares-to-target for UK names, and a GBP cash pool inflated by rounding a
+    hundred times more coarsely than the others.
+
+  Prices are now converted at the moment they arrive, and existing databases are
+  migrated once at startup: prices ÷ 100 and share counts × 100 together, so the
+  market value — and therefore every NAV point ever recorded — does not move by
+  a penny. Verified against the real database: the difference is exactly
+  0.000000000. A copy is written to `portfolio-before-gbx-<timestamp>.db` first,
+  because the rewrite has no undo.
+
+  If you keep UK positions in the app, note that prices are now in **pounds**,
+  so a cost basis entered in pence should be divided by 100.
+
+---
+
 ## v1.10.0
 
 **Added**

@@ -2,9 +2,11 @@
 """SQLite persistence. Single file DB, no external services required."""
 import sqlite3
 import os
+import datetime as _dt
 from contextlib import contextmanager
 
 import config  # loads .env before anything reads os.environ
+import universe as u  # quote-unit conventions for the pence migration; imports config itself
 
 DB_PATH = config.DB_PATH
 
@@ -132,6 +134,71 @@ def init():
         if fcols and "pe_type" not in fcols:
             c.execute("ALTER TABLE fundamentals ADD COLUMN pe_type TEXT")
     _migrate_renamed_tickers()
+    _migrate_pence_quotes()
+
+
+PENCE_MIGRATION_KEY = "gbx_normalised"
+
+
+def _migrate_pence_quotes():
+    """
+    London prices were stored as Yahoo sends them — in pence — while being
+    labelled GBP. Convert the archive to pounds, once.
+
+    The delicate part is that this must not move the NAV series by a single
+    penny. The index bought its London shares using the pence price as though it
+    were pounds, so it holds a hundredth of the shares it should, and valuing
+    that hundredth at the hundred-times price gave the right answer by accident.
+    Dividing the prices alone would therefore cut the UK holdings to 1% of their
+    value overnight and put a cliff in a record whose entire purpose is to be
+    continuous.
+
+    So both sides move together: prices ÷ 100 and share counts × 100. Their
+    product — the market value, and so the NAV — is unchanged, while each number
+    on its own becomes true. Cash pools are already genuine pounds (the residual
+    was computed from a pounds allocation) and are left alone.
+
+    Guarded by a meta flag rather than by inspecting the values, because after it
+    has run the prices are indistinguishable from prices that were always right.
+    """
+    if get_meta(PENCE_MIGRATION_KEY):
+        return
+
+    tickers = u.pence_quoted()
+    if not tickers:
+        set_meta(PENCE_MIGRATION_KEY, "1")
+        return
+
+    marks = ",".join("?" * len(tickers))
+    with conn() as c:
+        rows = c.execute(
+            f"SELECT COUNT(*) n FROM prices WHERE ticker IN ({marks})", tickers).fetchone()["n"]
+        held = c.execute(
+            f"SELECT COUNT(*) n FROM index_holdings WHERE ticker IN ({marks})", tickers).fetchone()["n"]
+
+    if rows or held:
+        # This rewrites price history in place, and there is no undo. Take a
+        # copy first: the migration is arithmetically reversible, but only if
+        # the original is still around to compare against.
+        try:
+            stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+            dest = os.path.join(os.path.dirname(DB_PATH) or ".",
+                                f"portfolio-before-gbx-{stamp}.db")
+            backup_to(dest)
+            print(f"[migrate] backed up to {dest} before rescaling")
+        except Exception as e:      # a failed backup must not block the fix
+            print(f"[migrate] WARNING: could not back up before rescaling: {e}")
+
+    with conn() as c:
+        if rows or held:
+            c.execute(
+                f"UPDATE prices SET close = close / 100.0 WHERE ticker IN ({marks})", tickers)
+            c.execute(
+                f"UPDATE index_holdings SET shares = shares * 100 WHERE ticker IN ({marks})", tickers)
+            print(f"[migrate] GBX->GBP: {rows} price rows scaled, {held} holdings rescaled "
+                  f"({', '.join(tickers)}); NAV unchanged by construction")
+
+    set_meta(PENCE_MIGRATION_KEY, "1")
 
 
 # Internal ticker keys that were renamed after data may already have been stored.

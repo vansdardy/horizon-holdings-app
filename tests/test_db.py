@@ -135,3 +135,77 @@ def test_archive_summary_counts_what_is_stored(db):
     s = db.archive_summary()
     assert (s["price_rows"], s["price_dates"], s["tickers_covered"]) == (3, 2, 2)
     assert s["first_date"] == "2026-01-05" and s["last_date"] == "2026-01-06"
+
+
+# ------------------------------------------------------------- quote units
+# The London Stock Exchange quotes ordinary shares in pence, and Yahoo passes
+# that straight through, so a GBP-denominated constituent arrives priced a
+# hundred times too high with nothing in the response to say so.
+#
+# It is worth being precise about what that broke, because the obvious guess is
+# wrong. It did NOT move the index NAV: the same inflated price decided how many
+# shares to buy AND valued them afterwards, so the error cancelled exactly —
+# which is why it survived so long looking healthy. What it corrupted is every
+# figure that depends on price alone: share counts a hundred times too small,
+# and the market value of a real position typed in from a broker statement a
+# hundred times too large.
+
+def test_london_listings_are_known_to_be_quoted_in_pence():
+    import universe as u
+
+    pence = u.pence_quoted()
+    assert pence, "the universe contains London listings, so some must be pence-quoted"
+    for t in pence:
+        assert u.UNIVERSE[t]["ccy"] == "GBP"
+        assert u.price_divisor(t) == 100.0
+
+    for t in ("AAPL", "NESN.SW", "SAP", "4568.T"):
+        assert u.price_divisor(t) == 1.0, f"{t} is not quoted in a minor unit"
+
+
+def test_pence_migration_leaves_the_fund_worth_exactly_what_it_was(db, monkeypatch):
+    import universe as u
+
+    uk = u.pence_quoted()[0]
+    other = "AAPL"
+
+    # A database in the old, wrong state: pence prices and the hundredth of the
+    # share count that buying at those prices produces.
+    db.upsert_prices([
+        {"date": "2026-03-02", "ticker": uk, "close": 1200.0},     # £12.00 in pence
+        {"date": "2026-03-02", "ticker": other, "close": 300.0},
+    ])
+    db.save_index_state({uk: 1_000, other: 5_000}, {"GBP": 42.0})
+    db.set_meta(db.PENCE_MIGRATION_KEY, "")   # pretend the migration never ran
+
+    before_uk = 1200.0 * 1_000
+    db.init()
+
+    after = db.prices_asof("2026-03-02")
+    holdings, cash = db.load_index_state()
+
+    assert after[uk]["close"] == 12.0, "the archive should now be in pounds"
+    assert holdings[uk] == 100_000, "and the share count should be true"
+    assert after[uk]["close"] * holdings[uk] == before_uk, (
+        "market value — and therefore NAV — must not move by a penny")
+
+    assert after[other]["close"] == 300.0, "a non-pence listing must be untouched"
+    assert holdings[other] == 5_000
+    assert cash["GBP"] == 42.0, "cash was already in pounds and is not rescaled"
+
+
+def test_pence_migration_runs_once(db):
+    import universe as u
+
+    uk = u.pence_quoted()[0]
+    db.upsert_prices([{"date": "2026-03-02", "ticker": uk, "close": 1200.0}])
+    db.save_index_state({uk: 1_000}, {})
+    db.set_meta(db.PENCE_MIGRATION_KEY, "")
+
+    db.init()
+    db.init()
+    db.init()
+
+    assert db.prices_asof("2026-03-02")[uk]["close"] == 12.0, (
+        "a second run must not divide again — the flag, not the values, decides")
+    assert db.load_index_state()[0][uk] == 100_000
