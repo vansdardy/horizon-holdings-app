@@ -143,6 +143,14 @@ def update(date, prices, fx):
             db.set_meta("last_rebalance_year", date[:4])
             rebalanced = True
 
+    if rebalanced:
+        # Any rebalance — or a seed — rebuilds every cash pool from scratch out
+        # of the whole NAV, so whatever the GBX migration left behind has just
+        # been reinvested. Clearing the flag here rather than on a date means
+        # the warning disappears when the thing it warns about is actually gone,
+        # instead of when someone remembers to take it down.
+        db.set_meta(db.GBX_CASH_NOTICE_KEY, "")
+
     equity, cash_usd, unpriced = _mark(holdings, cash, prices, fx)
     if unpriced:
         raise StaleValuationError(

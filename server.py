@@ -496,8 +496,38 @@ def api_index_holdings():
 
     nav_base = to_base(nav_usd)
     shares_out = u.SHARES_OUTSTANDING
+
+    # A database migrated out of pence carries one visible scar: its GBP cash
+    # pool is far bigger than buying whole shares should leave, because it was
+    # filled by rounding down in hundred-times steps. Nothing is wrong with the
+    # number — those are real pounds and the NAV counts them — but it is not the
+    # number a correct allocation would have produced, so the page says so until
+    # the next rebalance reinvests it. index_engine clears the flag at that point.
+    cash_notice = None
+    if db.get_meta(db.GBX_CASH_NOTICE_KEY):
+        pence_names = [t for t in u.pence_quoted() if prices.get(t)]
+        # Buying whole shares leaves a residual somewhere between zero and one
+        # share's price, so half the sum of the prices is what to expect.
+        typical = sum(prices[t]["close"] for t in pence_names) / 2.0
+        actual = cash.get("GBP", 0.0)
+        excess_usd = None
+        try:
+            excess_usd = index_engine.to_usd(max(actual - typical, 0.0), "GBP", fx)
+        except ValueError:
+            pass
+        cash_notice = {
+            "reason": "gbx_migration",
+            "ccy": "GBP",
+            "amount": actual,
+            "typical": typical,
+            "excess": max(actual - typical, 0.0),
+            "excess_pct_of_nav": (excess_usd / nav_usd) if (excess_usd and nav_usd) else 0.0,
+            "clears_on": "next annual rebalance",
+        }
+
     return {
         "seeded": True,
+        "cash_notice": cash_notice,
         "as_of": asof,
         "base_ccy": u.BASE_CCY,
         "numeraire": u.NUMERAIRE,

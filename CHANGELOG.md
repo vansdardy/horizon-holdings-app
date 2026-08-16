@@ -9,6 +9,37 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.10.2
+
+**Added**
+
+- **A note above the cash table explaining the oversized pound pool**, on any
+  database that was migrated out of pence. The pool is real money and the NAV
+  counts it correctly — but it is roughly ninety times what buying whole shares
+  should leave, because until v1.10.1 the index rounded down in steps a hundred
+  times too coarse, and that remainder is still sitting in cash rather than in
+  shares. On the real database: 14,143 GBP against the ~156 a correct allocation
+  would have left, a drag of 0.00015% of the fund.
+
+  **It takes itself down.** The notice is not a date or a hardcoded string: the
+  migration raises a flag, and `index_engine` lowers it the moment a rebalance
+  happens — which is exactly when the pool is reinvested, since a rebalance
+  reallocates the entire NAV, cash included. Verified end to end against a copy
+  of the real database: after simulating the January rebalance the GBP pool
+  falls from 14,143 to 126.80, the notice disappears, and NAV moves by
+  0.000000 USD.
+
+  A clean database never shows it, so nobody who was not affected sees a warning
+  about a bug that never touched them.
+
+**Fixed**
+
+- `db.set_meta` opened its own connection, which deadlocks if called from inside
+  an open write transaction. Callers already holding a cursor now use
+  `_set_meta(c, …)`; the public function is unchanged.
+
+---
+
 ## v1.10.1
 
 **Fixed**

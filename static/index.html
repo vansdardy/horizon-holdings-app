@@ -368,6 +368,12 @@ window.addEventListener('DOMContentLoaded', function(){
   .warn-band code, .offline-box code{ font-family: var(--mono); font-size:11.5px; color: var(--teal);
     background:#0E131A; padding:1px 5px; border:1px solid var(--hairline);}
 
+  /* A standing note about something explained rather than something wrong —
+     gold, not the rust of .warn-band, because nothing here needs fixing. */
+  .aside-note{ background:#141A14; border-left:3px solid var(--gold-dim); padding:13px 16px;
+    margin-bottom:14px; font-size:12.5px; color: var(--text-dim); line-height:1.75; max-width:900px;}
+  .aside-note b{ color: var(--text); }
+
   .offline-box{ background: var(--bg-card); border:1px dashed var(--gold-dim); padding:24px; }
   .offline-box h4{ font-family: var(--serif); font-size:17px; color: var(--gold); margin-bottom:10px; font-weight:600;}
   .offline-box p{ font-size:13px; color: var(--text-dim); line-height:1.8; margin-bottom:10px; max-width:820px;}
@@ -614,6 +620,9 @@ python server.py            # → http://127.0.0.1:8000</pre>
         </div>
         <h3 style="font-family:var(--serif);font-size:17px;font-weight:600;margin:26px 0 8px;"
             data-i18n="hold.cashTitle">Cash left over</h3>
+        <!-- Shown only while the backend reports one; it stops being reported
+             the moment the annual rebalance reinvests the pool. -->
+        <div id="holdCashNote" class="aside-note" style="display:none;"></div>
         <div class="table-wrap" style="max-height:none;">
           <table class="cash-table">
             <thead>
@@ -1362,6 +1371,19 @@ function renderHoldings(){
       <td class="num">${fmtPct(h.actual_weight, 3)}</td>
       <td class="num" style="color:var(--text-dim)">${fmtPct(h.target_weight, 3)}</td>
     </tr>`).join('');
+
+  // Present only while the backend still reports the condition, so it takes
+  // itself down at the rebalance rather than waiting to be remembered.
+  const note = $('holdCashNote');
+  if(note){
+    const n = HOLD.cash_notice;
+    note.style.display = n ? '' : 'none';
+    if(n) note.innerHTML = t('hold.cashNote', {
+      a: money(n.amount, n.ccy) + ' ' + n.ccy,
+      e: '~' + money(n.typical, n.ccy) + ' ' + n.ccy,
+      p: fmtPct(n.excess_pct_of_nav, 4),
+    });
+  }
 
   $('holdCashBody').innerHTML = HOLD.cash.map(c => `
     <tr>

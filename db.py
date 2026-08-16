@@ -139,6 +139,12 @@ def init():
 
 PENCE_MIGRATION_KEY = "gbx_normalised"
 
+# Raised by the migration on a database that actually held pence prices, and
+# lowered by index_engine the next time the index rebalances — which is when the
+# oversized cash pool it warns about is reinvested. A self-clearing notice: no
+# date to hardcode, and nothing anyone has to remember to remove.
+GBX_CASH_NOTICE_KEY = "gbx_cash_notice"
+
 
 def _migrate_pence_quotes():
     """
@@ -197,6 +203,11 @@ def _migrate_pence_quotes():
                 f"UPDATE index_holdings SET shares = shares * 100 WHERE ticker IN ({marks})", tickers)
             print(f"[migrate] GBX->GBP: {rows} price rows scaled, {held} holdings rescaled "
                   f"({', '.join(tickers)}); NAV unchanged by construction")
+            # The cash pools are NOT rescaled — they were always real pounds —
+            # but the GBP one is oversized, because buying at a hundred-times
+            # price rounded down in hundred-times steps. Flag it so the page can
+            # say so until the next rebalance reinvests it.
+            _set_meta(c, GBX_CASH_NOTICE_KEY, "1")
 
     set_meta(PENCE_MIGRATION_KEY, "1")
 
@@ -242,10 +253,20 @@ def get_meta(key, default=None):
         return r["value"] if r else default
 
 
+def _set_meta(c, key, value):
+    """Write a meta key on an EXISTING cursor.
+
+    Callers already inside a `with conn()` block must use this: set_meta opens
+    its own connection, and a second writer against a database that is already
+    in a write transaction blocks until it times out.
+    """
+    c.execute("INSERT INTO meta(key,value) VALUES(?,?) "
+              "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
+
+
 def set_meta(key, value):
     with conn() as c:
-        c.execute("INSERT INTO meta(key,value) VALUES(?,?) "
-                  "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
+        _set_meta(c, key, value)
 
 
 # ---------- market data ----------
