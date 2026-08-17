@@ -1393,6 +1393,46 @@ function renderHoldings(){
     </tr>`).join('');
 }
 
+/* ---------------- staying current ---------------- */
+// This window can be open for weeks — that is the entire point of the tray —
+// while the backend fetches once a day after the close. Nothing here used to
+// notice. The page loaded its data at boot and never looked again, so the
+// evening fetch landed in the database and the screen went on showing whatever
+// session was current when the window happened to open.
+//
+// Polling the local status endpoint beats reloading the window: it is one cheap
+// request to 127.0.0.1, it keeps the scroll position and any expanded row, and
+// it re-renders only when the backend reports something we have not seen.
+let LAST_FETCH_SEEN = null;
+
+/** Everything that changes when a fetch succeeds, in one comparable string. */
+function fetchStamp(s){
+  return [s.last_fetch_ok || '', s.latest_price_date || '', s.nav_points || 0].join('|');
+}
+
+async function pollForFreshData(){
+  try{
+    const s = await api('/api/status');
+    const stamp = fetchStamp(s);
+    if(LAST_FETCH_SEEN === null){ LAST_FETCH_SEEN = stamp; return; }
+    if(stamp === LAST_FETCH_SEEN) return;
+    // Never overwrite numbers someone is in the middle of typing. The stamp is
+    // deliberately left alone so the next tick tries again once they save.
+    if(DIRTY.size) return;
+
+    LAST_FETCH_SEEN = stamp;
+    await loadStatus();
+    await loadNav();
+    await loadHoldings();
+    await loadPositions();
+    await loadTickerPrices();
+    await loadFundamentals();
+  }catch(e){
+    // The backend restarts on a database import, and is briefly unreachable
+    // during an update. Missing a tick is harmless; the next one catches up.
+  }
+}
+
 /* ---------------- positions ---------------- */
 // ---- timeframe + simulation controls ----
 document.querySelectorAll('.tf-btn').forEach(b => {
@@ -1897,6 +1937,15 @@ async function boot(){
   const s = await loadStatus();
   if(s){ await loadNav(); await loadHoldings(); await loadPositions(); await loadTickerPrices(); }
   await loadFundamentals();
+
+  // Watch for the daily fetch landing while this window sits open.
+  if(s) LAST_FETCH_SEEN = fetchStamp(s);
+  setInterval(pollForFreshData, 60_000);
+  // And check immediately when someone comes back to the window, rather than
+  // making them wait out the remainder of a minute to see today's numbers.
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible') pollForFreshData();
+  });
 }
 boot();
 </script>

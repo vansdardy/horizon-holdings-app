@@ -426,3 +426,35 @@ test('renderNav reads base_ccy from the stats object', () => {
   assert.match(fn[0], /const IB = st\.base_ccy/,
     'renderNav must read st.base_ccy (the merged stats object)');
 });
+
+// ---------------------------------------------------------------------------
+// 7. The window notices the daily fetch.
+//
+// The app is designed to sit in the tray for weeks while the backend fetches
+// once a day after the close. The page loaded its data at boot and never looked
+// again, so a fetch would land in the database and the screen would go on
+// showing whatever session was current when the window opened — reported, quite
+// reasonably, as "the prices did not update".
+//
+// Structural because the real thing needs a clock, a market and a day to pass.
+// ---------------------------------------------------------------------------
+
+test('the page polls for data that arrives after it loaded', () => {
+  const code = stripNonCode(inlineScripts(HTML).join('\n'));
+
+  const fn = /async function pollForFreshData\(\)[\s\S]*?\n}/.exec(code);
+  assert.ok(fn, 'pollForFreshData() not found — nothing would notice a fetch');
+
+  assert.match(code, /setInterval\(\s*pollForFreshData/,
+    'the poller must actually be scheduled, or it never runs');
+
+  // Re-rendering must cover every panel a fetch changes, not just the NAV.
+  for (const loader of ['loadStatus', 'loadNav', 'loadHoldings', 'loadPositions',
+                        'loadTickerPrices']) {
+    assert.ok(fn[0].includes(loader + '('),
+      `a refresh must re-run ${loader}(), or that panel keeps yesterday's data`);
+  }
+
+  assert.match(fn[0], /DIRTY\.size/,
+    'a refresh must not overwrite figures the user is part-way through typing');
+});

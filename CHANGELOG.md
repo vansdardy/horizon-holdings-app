@@ -9,6 +9,35 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.11.0
+
+**Fixed**
+
+- **The window never showed the daily fetch.** The scheduler runs at 18:00, gets
+  the closes, recomputes NAV and writes it all to the database — and the open
+  window went on showing whatever session was current when it was opened. The
+  page loaded its data once at boot and never looked again. Clicking "Fetch now"
+  appeared to fix it, but only because that reloads the page's data; the fetch
+  itself had already happened hours earlier.
+
+  This is the sharpest possible case of a bug that only exists in a running
+  application. Every test passed, every endpoint was correct, the scheduler was
+  correct, and the database was correct. The defect lived in the gap between a
+  backend designed to run for weeks and a page written as though someone had
+  just opened it.
+
+  The page now polls `/api/status` once a minute and re-renders when the
+  backend reports a fetch it has not seen — NAV, holdings, positions, the ticker
+  and fundamentals together. It also checks the moment the window becomes
+  visible again, so returning to it after a day shows today's numbers rather
+  than a minute of yesterday's. Polling rather than reloading keeps the scroll
+  position and any expanded row.
+
+  Edits in progress are never overwritten: if there are unsaved position
+  changes, the refresh is deferred until they are saved.
+
+---
+
 ## v1.10.3
 
 **Fixed**
