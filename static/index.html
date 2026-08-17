@@ -305,6 +305,11 @@ window.addEventListener('DOMContentLoaded', function(){
   tbody tr:hover{ background: #1A222E; }
   tbody tr.expanded{ background: #1A222E; }
   td.num{ font-family: var(--mono); text-align: right; white-space: nowrap; }
+  /* A price carried over from an earlier session. Rust rather than grey: this
+     is not decoration, it is the difference between today's number and one from
+     several days ago. */
+  .stale-date{ font-family: var(--mono); font-size: 9.5px; font-weight: 400;
+    color: var(--rust); letter-spacing: .02em; }
 
   /* ---------- Positions table ----------
      Thirteen columns, ten of them numeric, and the space was being handed out
@@ -1152,6 +1157,7 @@ let POSROWS = [], TOTALS = null, DIRTY = new Set(), PENDING = {}, FXRATES = {};
 let BASE = 'CHF';                 // reporting currency; server default wins on first load
 let CASHROWS = [], CASH_PENDING = {}, USE_CASH_GAP = false;
 let NAVFULL = [], NAVSTATS = null, TF = 'ALL', SIM = null, ARCHIVE_RANGE = null;
+let LATEST_SESSION = null;   // newest session in the archive; see staleTag()
 let BASE_FROM_SERVER = false;
 const $ = id => document.getElementById(id);
 const money = (v, ccy) => (v == null) ? '—'
@@ -1194,6 +1200,7 @@ async function loadStatus(){
   try{
     const s = await api('/api/status');
     $('offlineBox').style.display = 'none';
+    LATEST_SESSION = s.latest_price_date || null;
     const bits = [];
     bits.push(s.is_mock
       ? `<span class="mock">${t('status.mock')}</span>`
@@ -1366,7 +1373,7 @@ function renderHoldings(){
       <td>${LANG === 'zh' ? h.name : (h.name_en || h.name)}
         <div style="font-size:10px;color:var(--text-faint);font-family:var(--mono)">${dispCountry(h.country)} · ${h.ccy}</div></td>
       <td class="num">${h.shares.toLocaleString()}</td>
-      <td class="num">${h.price == null ? '—' : money(h.price, h.ccy)}</td>
+      <td class="num">${h.price == null ? '—' : money(h.price, h.ccy)}${staleTag(h.price_date)}</td>
       <td class="num">${h.value_base == null ? '—' : money(h.value_base, IB)}</td>
       <td class="num">${fmtPct(h.actual_weight, 3)}</td>
       <td class="num" style="color:var(--text-dim)">${fmtPct(h.target_weight, 3)}</td>
@@ -1537,6 +1544,24 @@ function renderPosKpis(){
     `<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${s}</div></div>`).join('');
 }
 
+/**
+ * Mark a price that is not from the newest session in the archive.
+ *
+ * Valuation forward-fills: if a market had no bar on the day being valued, the
+ * last close before it is used. That is correct — exchanges keep different
+ * holidays, and re-dating a stale quote would fabricate price history — but
+ * shown without a date it reads as today's price, which is how a Zurich close
+ * from four days ago can sit in the table looking current.
+ *
+ * The far more common cause is not a holiday at all: Yahoo publishes European
+ * daily bars hours after the close, so a fetch that runs in the New York
+ * evening frequently predates them and every continental name forward-fills.
+ */
+function staleTag(d){
+  if(!d || !LATEST_SESSION || d >= LATEST_SESSION) return '';
+  return `<div class="stale-date" title="${t('pos.staleTitle', {d})}">${t('pos.staleAsOf', {d})}</div>`;
+}
+
 function renderPosTable(){
   const onlyHeld = $('onlyHeld').checked;
   const countryFilter = $('posCountryFilter').value;
@@ -1585,7 +1610,7 @@ function renderPosTable(){
       <td>${rec ? `<span class="dot" style="background:${COUNTRY_COLOR[rec.c]}"></span>${dispCountry(rec.c)}` : '—'}</td>
       <td class="num pos"><input class="pos-input${isDirty}" type="number" step="any" min="0" data-f="shares" data-t="${r.ticker}" value="${shVal}" placeholder="0"></td>
       <td class="num pos"><input class="pos-input${isDirty}" type="number" step="any" min="0" data-f="avg_cost" data-t="${r.ticker}" value="${acVal}" placeholder="0"></td>
-      <td class="num">${r.price==null?'—':money(r.price, r.ccy)}</td>
+      <td class="num">${r.price==null?'—':money(r.price, r.ccy)}${staleTag(r.price_date)}</td>
       <td class="num">${r.mv_usd==null||!held?'—':moneyBase(r.mv_usd)}</td>
       <td class="num ${pnlCls}">${(!held||r.pnl_usd==null)?'—':((r.pnl_usd>=0?'+':'')+moneyBase(r.pnl_usd))}</td>
       <td class="num ${pnlCls}">${(!held||r.pnl_pct==null)?'—':((r.pnl_pct>=0?'+':'')+(r.pnl_pct*100).toFixed(1)+'%')}</td>

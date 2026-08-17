@@ -9,6 +9,40 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.11.1
+
+**Fixed**
+
+- **A carried-over price looked like today's price.** Valuation forward-fills:
+  if a market has no bar for the session being valued, the last close before it
+  is used. That part is correct and deliberate — exchanges keep different
+  holidays, and re-dating a stale quote would fabricate price history. What was
+  wrong is that the table showed the number with no indication of its age, so a
+  Zurich close from three sessions ago sat in "My Positions" reading as current.
+
+  Prices from an earlier session now carry that session's date beneath them, in
+  both the positions table and the index's own book, with a tooltip explaining
+  why.
+
+  The usual cause is not a holiday. **Yahoo publishes continental European daily
+  bars hours after the close** — long enough that a fetch running in the New York
+  evening frequently predates them. On the day this was found, 28 of the 78
+  constituents had no bar for the current session: every SIX, XETRA, Euronext,
+  Borsa Italiana and Copenhagen name. US, UK, Japanese and Canadian listings all
+  had it.
+
+**Known, not yet fixed**
+
+- Because of the above, a NAV point can be computed from European closes one
+  session old, and `run_daily_update` never recomputes a session that already
+  has a NAV row — so it stays that way even once the real closes arrive. The
+  `n_priced` count does not reveal this, since forward-filled prices count as
+  priced. Deciding what to do about it means deciding whether this application
+  may revise a NAV point after publishing it, which is a change to what the
+  series means.
+
+---
+
 ## v1.11.0
 
 **Fixed**

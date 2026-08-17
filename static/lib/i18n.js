@@ -86,6 +86,8 @@
       'nav.chartTitle': 'NAV per unit',
 
       'ticker.pauseHint': 'Hover or focus to pause the tape',
+      'pos.staleAsOf': 'as of {d}',
+      'pos.staleTitle': 'No trade data for the latest session yet — this is the close from {d}, carried forward. European closes often reach the data source hours after the fetch.',
       'hold.title': 'What the index actually holds',
       'hold.desc': 'The book the NAV above is calculated from. The index buys <b>whole shares only</b>, so every position leaves a remainder that stays as cash in the currency it was left in — holdings plus that cash, marked at the latest close, <i>is</i> the NAV. Everything here is the model index, not your own positions.',
       'hold.asOf': 'Priced at the close of {d}',
@@ -308,6 +310,8 @@
       'nav.chartTitle': '净值曲线 · NAV per Share',
 
       'ticker.pauseHint': '鼠标悬停或聚焦可暂停滚动',
+      'pos.staleAsOf': '{d} 收盘',
+      'pos.staleTitle': '最新交易日尚无数据,这是 {d} 的收盘价沿用而来。欧洲市场的收盘数据常常在抓取之后数小时才到达数据源。',
       'hold.title': '指数的实际持仓',
       'hold.desc': '上面那条净值曲线,就是由这张表算出来的。指数<b>只买整股</b>,每个持仓都会剩下一点零头,这些零头以该股本币的形式留作现金 —— 持仓加上这些现金,按最新收盘价计价,<i>就是</i>净值本身。这里显示的是模型指数,不是你自己的持仓。',
       'hold.asOf': '按 {d} 收盘价计价',
