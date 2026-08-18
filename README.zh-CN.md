@@ -198,6 +198,41 @@ cd horizon-holdings-app
 
 ### 第 2 步:建虚拟环境、装依赖
 
+<details>
+<summary><b>用 conda(Anaconda / Miniconda)?先看这个</b></summary>
+
+如果装了 conda,`conda init` 通常会让它在每个新终端里自动激活 `base` 环境。这时候
+`python3` 指向的是 **conda 自己的解释器**,而不是 `brew install python`(或你的 Linux
+包管理器)刚装好的那个 —— 所以下面的 `python3 -m venv .venv` 会悄悄地把这个项目的虚拟
+环境建在 conda 的 Python 之上。
+
+建虚拟环境这一步本身通常不会报错。真正出问题的是下一步 `pip install -r requirements.txt`,
+而且会以两种看起来都像"这个项目坏了"、实际上是环境问题的方式失败:
+
+- **报错里提到 Rust 或 `cargo` 的编译/构建错误。** 有一个依赖(`curl_cffi`,由 `yfinance`
+  引入)发布的是预编译好的包,而不是让你自己编译的源码。如果你的 conda 是一个较老的
+  **x86_64 版本、在 Apple Silicon 上靠 Rosetta 转译运行** —— 如果你是几年前装的 Anaconda、
+  之后一直没重装,这种情况很常见 —— pip 就找不到匹配架构的预编译包,只能退回去从源码编译,
+  而这需要一个几乎没人装过的 Rust 工具链。
+- **下载某个包下到一半报 SSL 证书错误。** conda 的激活脚本会把 `SSL_CERT_FILE` 指向
+  conda 自己的证书文件,而这个环境变量即使你已经转去用一个不相关的虚拟环境,在同一个终端里
+  依然生效 —— pip 继承了它,验证 PyPI 证书时就可能失败。
+
+这两种情况都是 conda 把解释器"挡"住了,不是虚拟环境或本项目本身的问题。解法是:这一步
+明确指定一个非 conda 的 Python,而不是让 `python3` 顺着 `PATH` 解析到排在最前面的那个:
+
+```bash
+# Homebrew 装的 Python,不管 brew 给你的是哪个版本:
+$(brew --prefix python)/bin/python3 -m venv .venv
+
+# 或者,在这个终端会话里先临时让 conda 让开:
+conda deactivate
+python3 -m venv .venv
+```
+
+之后下面的所有步骤完全一样 —— 这一步只是换了个解释器来建 `.venv`。
+</details>
+
 **Windows(PowerShell):**
 
 ```powershell

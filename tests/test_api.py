@@ -300,3 +300,44 @@ def test_the_explanation_goes_away_when_the_pool_is_reinvested(client):
 
     _seed_with_gbp_cash(client, typical * 0.8)     # what a rebalance leaves
     assert client.get("/api/index_holdings").json()["cash_notice"] is None
+
+
+# ------------------------------------------------------------- output encoding
+# A user on a non-UTF-8-locale Windows machine hit a startup crash:
+# UnicodeEncodeError: 'charmap' codec can't encode characters ... character
+# maps to <undefined>. desktop/main.js sets PYTHONIOENCODING=utf-8 when it
+# spawns the backend, which is necessary but was not proven sufficient — the
+# crash came from somewhere that ignored it. server.py now reconfigures its own
+# stdout/stderr at import time, which is the one thing that protects every
+# later write through them regardless of what set the process up, including
+# running `python server.py` directly with no Electron involved at all.
+
+def test_stdout_and_stderr_are_forced_to_utf8_even_without_the_env_var():
+    """The regression: with PYTHONIOENCODING absent, server.py must still leave
+    stdout/stderr on utf-8 by the time it finishes importing."""
+    import subprocess, sys, os
+
+    env = dict(os.environ)
+    env.pop("PYTHONIOENCODING", None)
+    env.pop("PYTHONUTF8", None)
+    # A non-UTF-8 preferred locale is what actually triggered the crash; force
+    # one so the test fails without the fix regardless of this machine's own
+    # default encoding.
+    env["PYTHONIOENCODING"] = ""  # explicitly empty, not just unset
+
+    code = (
+        "import sys; "
+        "before = sys.stdout.encoding; "
+        "exec(open('server.py', encoding='utf-8').read()"
+        ".split('from fastapi import FastAPI')[0]); "
+        "print(before + '|' + sys.stdout.encoding)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], cwd=os.path.dirname(os.path.abspath(__file__)) + "/..",
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert out.returncode == 0, out.stderr
+    before, after = out.stdout.strip().split("|")
+    assert after == "utf-8", (
+        f"server.py must force stdout to utf-8 regardless of the environment "
+        f"it started with (was {before!r}, stayed {after!r})")

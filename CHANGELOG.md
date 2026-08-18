@@ -9,6 +9,40 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.11.2
+
+**Fixed**
+
+- **A crash on Windows machines with a non-UTF-8 system locale.** A user hit
+  `UnicodeEncodeError: 'charmap' codec can't encode characters ... character
+  maps to <undefined>` on first launch, followed by "Backend stopped."
+  `desktop/main.js` correctly sets `PYTHONIOENCODING=utf-8` when it spawns the
+  backend, but that only protects code that writes through `sys.stdout` —
+  something else in the process, most likely a bundled dependency reading the
+  OS locale codepage directly, did not. `server.py` now reconfigures its own
+  stdout and stderr to UTF-8 as the first thing it does, which fixes every
+  later write through those streams regardless of what set the process up. It
+  also closes a gap this project's own instructions left open: running
+  `python server.py` directly, as the README's "build from source" path tells
+  developers to do, never went through Electron's `spawn()` at all and had no
+  protection whatsoever on such a machine.
+
+**Documentation**
+
+- Added a conda troubleshooting note to both READMEs. If Anaconda or Miniconda
+  auto-activates its `base` environment in every terminal — the default after
+  `conda init` — `python3 -m venv .venv` silently builds this project's virtual
+  environment on conda's Python instead of Homebrew's or the system's. The
+  venv itself is usually created without complaint; `pip install` afterwards
+  can then fail two ways that both look like the project is broken: a
+  Rust/`cargo` compile error building `curl_cffi` from source (common when the
+  conda install is an old x86_64 build running under Rosetta on Apple
+  Silicon, which has no matching prebuilt wheel), or an SSL certificate
+  failure from conda's `SSL_CERT_FILE` still being set in the same terminal.
+  The fix is naming a non-conda interpreter explicitly for this one step.
+
+---
+
 ## v1.11.1
 
 **Fixed**

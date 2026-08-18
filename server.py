@@ -17,6 +17,28 @@ import threading
 import time
 import traceback
 
+# Force UTF-8 for our own output before anything else runs, rather than trust
+# PYTHONIOENCODING alone. desktop/main.js sets that env var when it spawns this
+# process, and that is necessary — but it is not sufficient. A user reported a
+# crash on Windows with a non-UTF-8 system locale: "UnicodeEncodeError:
+# 'charmap' codec can't encode characters ... character maps to <undefined>",
+# raised from inside a bundled dependency's own text handling, which reads the
+# OS locale codepage directly rather than going through sys.stdout. No print()
+# in this codebase contains a character cp1252 cannot represent, so the trigger
+# was not ours to fix at the source — but reconfiguring the streams here means
+# every later write through them, including a library's, inherits utf-8 too.
+#
+# This also covers a gap PYTHONIOENCODING alone leaves open: running
+# `python server.py` directly, as this project's own README tells developers
+# to do, never goes through Electron's spawn() at all, so on a non-UTF-8-locale
+# Windows machine it previously had no protection whatsoever.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware

@@ -200,6 +200,47 @@ cd horizon-holdings-app
 
 ### 2. Create the Python environment and install dependencies
 
+<details>
+<summary><b>Using conda (Anaconda / Miniconda)? Read this first</b></summary>
+
+If conda is installed, `conda init` usually made it auto-activate its `base` environment in
+every new terminal. While that is active, `python3` resolves to **conda's own interpreter**,
+not the one `brew install python` (or your Linux package manager) just gave you — so
+`python3 -m venv .venv` below silently builds this project's virtual environment on top of
+conda's Python instead.
+
+The venv itself will usually be created without complaint. What fails is the next step,
+`pip install -r requirements.txt`, and it can fail in two different ways that both look like
+this project is broken rather than the environment:
+
+- **A build/compile error mentioning Rust or `cargo`.** One dependency (`curl_cffi`, pulled in
+  by `yfinance`) ships prebuilt wheels rather than source you're expected to compile. If your
+  conda installation is an older **x86_64 build running under Rosetta on Apple Silicon** — very
+  common if you installed Anaconda a few years ago and never reinstalled — pip cannot find a
+  matching wheel for that architecture and falls back to building from source, which needs a
+  Rust toolchain that almost nobody has installed.
+- **An SSL certificate error partway through downloading a package.** conda's activation script
+  points `SSL_CERT_FILE` at conda's own CA bundle, and that environment variable is still set in
+  the same terminal even after you've moved on to an unrelated venv — pip inherits it and can
+  fail verifying PyPI's certificate.
+
+Both are conda shadowing the interpreter, not a problem with the venv or this project. The fix
+is to name a non-conda Python explicitly for this one command, rather than let `python3` resolve
+to whatever's first on `PATH`:
+
+```bash
+# Homebrew's Python, whatever version brew installed:
+$(brew --prefix python)/bin/python3 -m venv .venv
+
+# or, temporarily get conda out of the way for this terminal session:
+conda deactivate
+python3 -m venv .venv
+```
+
+Everything below this box works exactly the same afterwards — this only changes which
+interpreter builds `.venv`.
+</details>
+
 **Windows (PowerShell):**
 
 ```powershell
