@@ -596,6 +596,10 @@ python server.py            # → http://127.0.0.1:8000</pre>
       <div class="chart-card" style="margin-top:4px;">
         <h3><span data-i18n="nav.chartTitle">NAV per unit</span> <span id="navCcyLabel"></span></h3>
         <canvas id="navChart"></canvas>
+        <!-- Named rather than merely counted: a point computed from a
+             carried-over close is not wrong so much as not yet final, and it
+             corrects itself on a later fetch. Hidden when nothing is pending. -->
+        <div id="navPartial" class="status-msg" style="display:none;"></div>
       </div>
 
       <!-- The ledger the chart above is computed from. Kept inside the NAV
@@ -1300,6 +1304,13 @@ function renderNav(){
       `<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${s}</div></div>`).join('');
 
     const lbl = $('navCcyLabel'); if(lbl) lbl.textContent = '(' + IB + ')';
+    const pending = (NAVFULL || []).filter(h => (h.stale_count || 0) > 0).length;
+    const pnote = $('navPartial');
+    if(pnote){
+      pnote.style.display = pending ? '' : 'none';
+      if(pending) pnote.textContent = t('nav.partial', {n: pending});
+    }
+
     if(navChart) navChart.destroy();
     navChart = new Chart($('navChart'), {
       type:'line',

@@ -7,6 +7,8 @@ Model index mechanics (same rules verified earlier):
   - daily mark-to-market
 """
 import math
+import datetime as _dt
+
 import db
 import universe as u
 
@@ -160,6 +162,46 @@ def update(date, prices, fx):
     return {"date": date, "nav_usd": nav_usd, "nav_base": nav_base,
             "base_ccy": u.BASE_CCY, "nav_per_share": nps, "equity_usd": equity,
             "cash_usd": cash_usd, "n_priced": n_priced, "rebalanced": rebalanced}
+
+
+def revalue(date, prices, fx, rebalanced, stale_tickers=()):
+    """
+    Recompute an EXISTING session's NAV from better prices. Mark-to-market only.
+
+    Deliberately not `update()`. That function seeds and rebalances, and it does
+    both against whatever holdings are stored *now* — so replaying a past date
+    through it would either re-trigger a rebalance or value an old session using
+    share counts the index only acquired later. Both would corrupt the record
+    this is trying to correct.
+
+    Correct only while the holdings have not changed since `date`, which means
+    the caller must not reach back past the last rebalance. Within one rebalance
+    period the share counts are fixed by definition, so re-marking them at
+    corrected prices reproduces exactly what the original computation would have
+    produced had the data been complete at the time.
+
+    `rebalanced` is passed back in rather than recomputed, so a revision cannot
+    silently erase the flag recording that this session was a rebalance day.
+    """
+    holdings, cash = db.load_index_state()
+    equity, cash_usd, unpriced = _mark(holdings, cash, prices, fx)
+    if unpriced:
+        raise StaleValuationError(
+            f"cannot revalue {date}: {len(unpriced)} held positions have no price "
+            f"({', '.join(sorted(unpriced)[:8])})")
+
+    nav_usd = equity + cash_usd
+    nav_base = to_base(nav_usd, fx)
+    nps = nav_base / u.SHARES_OUTSTANDING
+    n_priced = sum(1 for t in u.UNIVERSE if prices.get(t))
+
+    db.upsert_nav(date, nav_usd, nps, equity, cash_usd, n_priced, rebalanced,
+                  nav_base=nav_base, base_ccy=u.BASE_CCY,
+                  stale_count=len(stale_tickers), stale_tickers=sorted(stale_tickers),
+                  revised_at=_dt.datetime.now().isoformat(timespec="seconds"))
+    return {"date": date, "nav_usd": nav_usd, "nav_base": nav_base,
+            "nav_per_share": nps, "n_priced": n_priced,
+            "stale_count": len(stale_tickers)}
 
 
 def stats():

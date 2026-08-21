@@ -146,7 +146,116 @@ def fetch_live():
         price_rows = [r for r in price_rows if r["date"] >= earliest_fx]
 
     valuation_date = max(r["date"] for r in price_rows)
+
+    # The chart endpoint often has no close yet for the newest session; ask the
+    # quote service for those before anything is valued, so this session's NAV
+    # uses this session's prices wherever they exist at all.
+    price_rows, _unfilled = _fill_missing_with_quotes(
+        price_rows, resolved, valuation_date)
+
     return valuation_date, price_rows, fx_rows
+
+
+# ------------------------------------------------- quote gap-fill (live only)
+# States in which the regular session is over, so `regularMarketPrice` is that
+# session's CLOSE rather than a price that is still moving.
+_SESSION_OVER = {"CLOSED", "POST", "POSTPOST", "PREPRE", "PRE"}
+
+
+def _quote_close(ticker, symbol, want_date):
+    """
+    Ask Yahoo's QUOTE service for `want_date`'s close, or None.
+
+    This exists because Yahoo's two services disagree with each other. The chart
+    endpoint - the batched download every other price here comes from - returns
+    the newest session's row with a **null close** for a while after that market
+    shuts, and backfills it per symbol at its own pace, sometimes many hours
+    later. The quote endpoint, which is what the Yahoo website itself displays,
+    already has the number. Same company, same session, different answers.
+
+    Left alone, that gap means a day's NAV is computed from the PREVIOUS
+    session's close for whichever constituents Yahoo had not caught up on.
+
+    Two guards make a quote safe to use as a close, and both are required:
+
+      * `marketState` must say the regular session has ended. A quote taken
+        mid-session is a live price, not a close, and writing one into the
+        archive would be a worse error than the staleness it fixes.
+      * `regularMarketTime`, converted to the EXCHANGE's own timezone, must fall
+        on `want_date`. This is what pins the number to a session; without it
+        there is no way to tell today's close from yesterday's.
+
+    Currency comes from the quote itself rather than from UNIVERSE, because the
+    quote reports London in GBp (pence) exactly as the chart does - 12088.0 for
+    a stock trading at GBP 120.88. Trusting the response's own unit stops this
+    from re-introducing the pence bug through a second door.
+    """
+    import yfinance as yf
+
+    try:
+        info = yf.Ticker(symbol).info or {}
+    except Exception as e:
+        print(f"[marketdata] {ticker}: quote lookup failed ({type(e).__name__})")
+        return None
+
+    state = str(info.get("marketState") or "").upper()
+    if state not in _SESSION_OVER:
+        return None
+
+    price = info.get("regularMarketPrice")
+    when = info.get("regularMarketTime")
+    tzname = info.get("exchangeTimezoneName")
+    if price is None or not isinstance(when, (int, float)) or not tzname:
+        return None
+
+    try:
+        from zoneinfo import ZoneInfo
+        session = dt.datetime.fromtimestamp(when, ZoneInfo(tzname)).date().isoformat()
+    except Exception:
+        return None
+    if session != want_date:
+        return None
+
+    close = float(price)
+    if str(info.get("currency") or "") == "GBp":
+        close /= 100.0
+    elif u.price_divisor(ticker) != 1.0:
+        # The quote did not label its unit, but this listing is known to be
+        # quoted in a minor one. Trust the universe rather than the bare number.
+        close /= u.price_divisor(ticker)
+    return close
+
+
+def _fill_missing_with_quotes(price_rows, resolved, valuation_date):
+    """
+    Fill the valuation session for constituents the chart endpoint left empty.
+
+    Only the gaps are looked up. A quote costs one request per ticker against a
+    single batched request for all of them, so sweeping all 78 every day would
+    be ~78x the traffic to re-fetch closes the chart already had - identical
+    numbers, on the days when nothing is missing at all.
+    """
+    have = {r["ticker"] for r in price_rows if r["date"] == valuation_date}
+    missing = [t for t in resolved if t not in have]
+    if not missing:
+        return price_rows, []
+
+    print(f"[marketdata] chart has no {valuation_date} close for {len(missing)} "
+          f"constituent(s); asking the quote service")
+    filled = []
+    for t in missing:
+        close = _quote_close(t, resolved[t], valuation_date)
+        if close is not None:
+            price_rows.append({"ticker": t, "close": close, "date": valuation_date})
+            filled.append(t)
+    if filled:
+        print(f"[marketdata] quote supplied {valuation_date} for {len(filled)}: "
+              f"{', '.join(sorted(filled))}")
+    still = sorted(set(missing) - set(filled))
+    if still:
+        print(f"[marketdata] still no {valuation_date} close for {len(still)}: "
+              f"{', '.join(still)} - that session's NAV will be marked partial")
+    return price_rows, still
 
 
 # ---------------------------------------------------------------- mock

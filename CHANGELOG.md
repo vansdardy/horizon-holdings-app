@@ -9,6 +9,60 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.12.0
+
+Closes the European price lag reported in v1.11.1, from both ends.
+
+**Added**
+
+- **The quote service fills gaps the chart service has not published yet.**
+  Yahoo runs two services that disagree: the batched chart download every price
+  here comes from returns the newest session's row with a **null close** for a
+  while after a market shuts, backfilling per symbol at its own pace — while the
+  quote endpoint, which is what the Yahoo website shows, already has the number.
+  On the day this was investigated, 28 of 78 constituents had no chart close for
+  the current session, and every one of them was a continental European listing.
+
+  After the batched download, any constituent still missing the valuation
+  session is now looked up individually against the quote service. Two guards
+  are both required before a quote is accepted as a close: `marketState` must
+  say the regular session has ended, and `regularMarketTime` — converted to the
+  **exchange's own** timezone — must fall on the session being valued. Without
+  the second, there is no way to tell today's close from yesterday's; without
+  the first, a mid-session price could be written into the archive as a close,
+  which would be worse than the staleness being fixed.
+
+  Only the gaps are looked up. Sweeping all 78 daily would be ~78x the traffic
+  to re-fetch closes the chart already had.
+
+  The quote reports London in GBp exactly as the chart does, so the unit is read
+  from the response's own `currency` field — this does not re-introduce the
+  pence bug through a second door.
+
+- **A NAV point computed from incomplete data now says so, and corrects itself.**
+  `nav_history` records which constituents were carried over (`stale_count`,
+  `stale_tickers`) and when a point was recomputed (`revised_at`). At the end of
+  every fetch, any partial day whose gaps the archive has since filled is
+  recomputed automatically — the price history was already self-healing, and now
+  the published NAV follows it. The chart names how many sessions are still
+  pending, and stops saying so when none are.
+
+- **`POST /api/revise`** does the same on demand, for when you know the archive
+  has caught up and would rather not wait for the next scheduled fetch.
+
+**Notes on correctness**
+
+- Revision uses a new mark-only `index_engine.revalue()`, deliberately not
+  `update()`. That function seeds and rebalances against whatever holdings are
+  stored *now*, so replaying a past session through it would value that day with
+  share counts the index only acquired later.
+- Revision never reaches back past the last rebalance, for the same reason.
+- A point is only rewritten when strictly fewer of its constituents are carried
+  over than when it was written. Rewriting a published number for no gain is
+  what makes a series untrustworthy.
+
+---
+
 ## v1.11.2
 
 **Fixed**

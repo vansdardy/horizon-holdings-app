@@ -133,6 +133,17 @@ def init():
         fcols = {r["name"] for r in c.execute("PRAGMA table_info(fundamentals)")}
         if fcols and "pe_type" not in fcols:
             c.execute("ALTER TABLE fundamentals ADD COLUMN pe_type TEXT")
+        # Which constituents were valued at a carried-over close, per session.
+        # Without this there is no way to look back and ask "which of my NAV
+        # points were computed from incomplete data" — the answer used to be
+        # discarded the moment the fetch response was returned.
+        ncols = {r["name"] for r in c.execute("PRAGMA table_info(nav_history)")}
+        if "stale_count" not in ncols:
+            c.execute("ALTER TABLE nav_history ADD COLUMN stale_count INTEGER DEFAULT 0")
+        if "stale_tickers" not in ncols:
+            c.execute("ALTER TABLE nav_history ADD COLUMN stale_tickers TEXT")
+        if "revised_at" not in ncols:
+            c.execute("ALTER TABLE nav_history ADD COLUMN revised_at TEXT")
     _migrate_renamed_tickers()
     _migrate_pence_quotes()
 
@@ -472,18 +483,48 @@ def load_index_state():
 
 
 def upsert_nav(date, nav_usd, nav_per_share, equity_usd, cash_usd, n_priced,
-               rebalanced, nav_base=None, base_ccy=None):
+               rebalanced, nav_base=None, base_ccy=None,
+               stale_count=0, stale_tickers=None, revised_at=None):
+    """
+    Write one session's NAV.
+
+    `stale_count`/`stale_tickers` record which constituents were valued at a
+    close carried over from an earlier session, which is what makes a point
+    revisable later: a revision pass can find the affected days and ask whether
+    the archive has since filled those gaps in. `revised_at` is set only when a
+    point is recomputed after it was first published, so a corrected number is
+    never silently substituted for the original.
+    """
+    tickers = ",".join(stale_tickers) if stale_tickers else None
     with conn() as c:
         c.execute(
             "INSERT INTO nav_history(date,nav_usd,nav_per_share,equity_usd,cash_usd,"
-            "n_priced,rebalanced,nav_base,base_ccy) "
-            "VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(date) DO UPDATE SET "
+            "n_priced,rebalanced,nav_base,base_ccy,stale_count,stale_tickers,revised_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(date) DO UPDATE SET "
             "nav_usd=excluded.nav_usd, nav_per_share=excluded.nav_per_share, "
             "equity_usd=excluded.equity_usd, cash_usd=excluded.cash_usd, "
             "n_priced=excluded.n_priced, rebalanced=excluded.rebalanced, "
-            "nav_base=excluded.nav_base, base_ccy=excluded.base_ccy",
+            "nav_base=excluded.nav_base, base_ccy=excluded.base_ccy, "
+            "stale_count=excluded.stale_count, stale_tickers=excluded.stale_tickers, "
+            "revised_at=excluded.revised_at",
             (date, nav_usd, nav_per_share, equity_usd, cash_usd, n_priced,
-             int(rebalanced), nav_base, base_ccy))
+             int(rebalanced), nav_base, base_ccy,
+             int(stale_count or 0), tickers, revised_at))
+
+
+def set_nav_staleness(date, stale_tickers):
+    """Record which constituents were carried over for an already-written row."""
+    with conn() as c:
+        c.execute("UPDATE nav_history SET stale_count=?, stale_tickers=? WHERE date=?",
+                  (len(stale_tickers), ",".join(stale_tickers) or None, date))
+
+
+def nav_rows_with_stale():
+    """NAV points written from incomplete data, oldest first."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT date, rebalanced, stale_count, stale_tickers FROM nav_history "
+            "WHERE COALESCE(stale_count,0) > 0 ORDER BY date")]
 
 
 def nav_history():

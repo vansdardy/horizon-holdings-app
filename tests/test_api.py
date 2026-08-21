@@ -341,3 +341,107 @@ def test_stdout_and_stderr_are_forced_to_utf8_even_without_the_env_var():
     assert after == "utf-8", (
         f"server.py must force stdout to utf-8 regardless of the environment "
         f"it started with (was {before!r}, stayed {after!r})")
+
+
+# --------------------------------------------------- partial NAV and revision
+# Yahoo's chart endpoint publishes some constituents' closes hours after the
+# session ends, so a NAV point can be computed with a previous session's close
+# carried forward for those names. Before this, that was invisible AND
+# permanent: n_priced counts a carried-over price as priced, and run_daily_update
+# skips any date that already has a NAV row, so the archive quietly corrected
+# itself while the published number never moved.
+
+def _stalest(client):
+    import db as db_module
+    return {r["date"]: r for r in db_module.nav_rows_with_stale()}
+
+
+def _hide_from_fetch(monkeypatch, ticker):
+    """Make the fetch return no close for `ticker` on the newest session.
+
+    This is what Yahoo's chart endpoint actually does when it has not published
+    a symbol's bar yet. Deleting the row from the database instead would not
+    test anything: mock mode regenerates prices on every fetch, so the deletion
+    is undone by the very call under test.
+    """
+    real = server.marketdata.fetch
+
+    def patched(day_offset=0, window=1):
+        vd, prices, fx = real(day_offset=day_offset, window=window)
+        return vd, [r for r in prices
+                    if not (r["ticker"] == ticker and r["date"] == vd)], fx
+
+    monkeypatch.setattr(server.marketdata, "fetch", patched)
+
+
+def test_a_day_valued_with_a_carried_over_close_is_recorded_as_partial(client, monkeypatch):
+    import db as db_module
+
+    client.post("/api/refresh?window=3&day_offset=-1")
+    _hide_from_fetch(monkeypatch, "ABBN.SW")
+    client.post("/api/refresh?window=1")
+
+    day = db_module.latest_price_date()
+    row = _stalest(client).get(day)
+    assert row is not None, "the day must be recorded as partial, not silently accepted"
+    assert row["stale_count"] >= 1
+    assert "ABBN.SW" in (row["stale_tickers"] or ""), (
+        "which constituents were carried over has to be recorded, or nothing "
+        "can find this day again once the data lands")
+
+
+def test_a_partial_day_is_recomputed_once_the_close_arrives(client, monkeypatch):
+    import db as db_module
+
+    client.post("/api/refresh?window=3&day_offset=-1")
+    _hide_from_fetch(monkeypatch, "ABBN.SW")
+    client.post("/api/refresh?window=1")
+    day = db_module.latest_price_date()
+
+    before = next(h for h in db_module.nav_history() if h["date"] == day)
+    assert before["stale_count"] >= 1
+    assert before["revised_at"] is None
+
+    # The late close lands in the archive, as a later fetch's window would bring it.
+    db_module.upsert_prices([{"ticker": "ABBN.SW", "close": 123.45, "date": day}])
+    body = client.post("/api/revise").json()
+
+    assert day in body["revised"]
+    after = next(h for h in db_module.nav_history() if h["date"] == day)
+    assert after["stale_count"] == 0
+    assert after["revised_at"], "a corrected point must say it was corrected"
+    assert after["nav_per_share"] != before["nav_per_share"]
+    assert after["rebalanced"] == before["rebalanced"], (
+        "revision must not erase the flag marking a rebalance day")
+
+
+def test_revision_is_idempotent(client, monkeypatch):
+    import db as db_module
+
+    client.post("/api/refresh?window=3&day_offset=-1")
+    _hide_from_fetch(monkeypatch, "ABBN.SW")
+    client.post("/api/refresh?window=1")
+    day = db_module.latest_price_date()
+    db_module.upsert_prices([{"ticker": "ABBN.SW", "close": 123.45, "date": day}])
+
+    assert client.post("/api/revise").json()["revised"] == [day]
+    assert client.post("/api/revise").json()["revised"] == [], (
+        "rewriting a published number for no gain is what makes a series "
+        "untrustworthy; a second pass must change nothing")
+
+
+def test_revision_never_reaches_past_a_rebalance(client):
+    """revalue() marks against the holdings stored NOW. Share counts change at a
+    rebalance, so correcting a day on the far side would value it with shares
+    the index did not own at the time."""
+    import db as db_module
+
+    client.post("/api/refresh?window=3&day_offset=-1")
+    day = db_module.latest_price_date()
+
+    # Pretend this day sits before the current rebalance period.
+    db_module.set_nav_staleness(day, ["ABBN.SW"])
+    db_module.set_meta("last_rebalance_year", str(int(day[:4]) + 1))
+
+    assert client.post("/api/revise").json()["revised"] == [], (
+        "a day before the last rebalance must be left alone")

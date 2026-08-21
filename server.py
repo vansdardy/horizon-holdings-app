@@ -196,9 +196,15 @@ def run_daily_update(day_offset=0, window=1):
                 continue
             r["stale_constituents"] = len(stale)
             r["stale_tickers"] = sorted(stale)[:10]
+            # Persist which constituents were carried over, so a later fetch can
+            # find this day again once the archive has filled those gaps in.
+            # index_engine.update wrote the row a moment ago without them.
+            db.set_nav_staleness(d, sorted(stale))
             results.append(r)
             if d != valuation_date:
                 backfilled.append(d)
+
+        revised = _revise_partial_navs(need_ccy)
 
         if not results:
             reasons = "; ".join(f"{s['date']}: {s['reason']}" for s in skipped[:4]) or "no sessions returned"
@@ -206,12 +212,69 @@ def run_daily_update(day_offset=0, window=1):
                 f"no NAV point could be computed. {reasons}")
 
         out = dict(results[-1])
+        out["revised_dates"] = revised
         out["rows_persisted"] = n_p + n_f
         out["sessions_computed"] = len(results)
         out["backfilled_dates"] = backfilled
         out["skipped_sessions"] = skipped
         out["symbols_missing"] = sorted(set(u.UNIVERSE) - {r["ticker"] for r in price_rows})
         return out
+
+
+def _revise_partial_navs(need_ccy):
+    """
+    Recompute NAV points that were written from incomplete data, now that the
+    archive has caught up. Returns the dates actually revised.
+
+    The daily fetch pulls a ~10-day window and stores every bar in it, so a
+    close Yahoo published late lands in the archive on a subsequent day all by
+    itself. Until now nothing noticed: the NAV row for that session had already
+    been written, and `todo` skips any date that already has one, so the price
+    history quietly corrected itself while the published NAV kept the carried-
+    over number forever.
+
+    Two boundaries keep this honest:
+
+      * Never reach back past the last rebalance. Share counts change there, and
+        `revalue` marks against the holdings stored *now* — so correcting a day
+        on the far side would value it with shares the index did not yet own.
+      * Only revise when the day is genuinely better off, i.e. strictly fewer
+        carried-over constituents than when it was written. A revision that
+        improves nothing is churn, and rewriting a published number for no gain
+        is exactly what makes a series untrustworthy.
+    """
+    rows = db.nav_rows_with_stale()
+    if not rows:
+        return []
+
+    # The rebalance boundary: the first session of the current rebalance year.
+    last_year = db.get_meta("last_rebalance_year")
+    floor = f"{last_year}-01-01" if last_year else None
+
+    revised = []
+    for row in rows:
+        d = row["date"]
+        if floor and d < floor:
+            continue
+        fx = db.fx_asof(d)
+        if [c for c in need_ccy if not fx.get(c)]:
+            continue
+        asof = db.prices_asof(d)
+        if not asof:
+            continue
+        stale_now = sorted(t for t, v in asof.items() if v["date"] < d)
+        if len(stale_now) >= (row["stale_count"] or 0):
+            continue
+
+        prices = {t: v["close"] for t, v in asof.items()}
+        try:
+            index_engine.revalue(d, prices, fx, bool(row["rebalanced"]), stale_now)
+        except index_engine.StaleValuationError:
+            continue
+        print(f"[revise] {d}: recomputed with {row['stale_count']} -> "
+              f"{len(stale_now)} carried-over prices")
+        revised.append(d)
+    return revised
 
 
 def run_fundamentals_update(force=False):
@@ -407,6 +470,36 @@ def api_status():
             "tickers_covered": len(db.latest_fundamentals()),
         },
     }
+
+
+@app.post("/api/revise")
+def api_revise():
+    """
+    Recompute every NAV point that was written from incomplete data, using
+    whatever the price archive holds now.
+
+    Normally this happens by itself at the end of each daily fetch, so this
+    exists for the case where you know the archive has caught up and would
+    rather not wait for the next scheduled run. It is safe to call repeatedly:
+    a point is only rewritten when strictly fewer of its constituents are
+    carried over than when it was last written, so calling it twice does
+    nothing the second time.
+
+    It will not reach back past the last rebalance — see index_engine.revalue.
+    """
+    need_ccy = [c for c in u.CURRENCIES if c != u.NUMERAIRE]
+    if u.BASE_CCY != u.NUMERAIRE and u.BASE_CCY not in need_ccy:
+        need_ccy.append(u.BASE_CCY)
+    try:
+        with _fetch_lock:
+            revised = _revise_partial_navs(need_ccy)
+    except Exception as e:
+        raise HTTPException(500, f"revision failed: {e}")
+    remaining = db.nav_rows_with_stale()
+    return {"ok": True, "revised": revised,
+            "still_partial": [{"date": r["date"], "stale_count": r["stale_count"],
+                               "tickers": (r["stale_tickers"] or "").split(",")}
+                              for r in remaining]}
 
 
 @app.post("/api/refresh")
