@@ -209,3 +209,50 @@ def test_pence_migration_runs_once(db):
     assert db.prices_asof("2026-03-02")[uk]["close"] == 12.0, (
         "a second run must not divide again — the flag, not the values, decides")
     assert db.load_index_state()[0][uk] == 100_000
+
+
+# ------------------------------------------------- in-progress sessions
+# A market that is open right now already has a bar for today holding its live
+# price. Fetch at 23:00 in New York and Tokyo is mid-morning: the Japanese
+# constituents return a bar dated tomorrow with an intraday number in it, while
+# nobody else has reached that session. Valuing on that date writes a NAV point
+# for a day that has barely happened, and stores intraday numbers as closes.
+
+def _rows(date_to_tickers):
+    return [{"ticker": t, "close": 10.0, "date": d}
+            for d, ts in date_to_tickers.items() for t in ts]
+
+
+def test_a_session_only_tokyo_has_reached_is_not_valued():
+    import marketdata
+
+    universe_size = 78
+    japan = [f"J{i}.T" for i in range(8)]
+    everyone = japan + [f"X{i}" for i in range(70)]
+
+    rows = _rows({
+        "2026-08-20": everyone,   # a real, complete global session
+        "2026-08-21": japan,      # Tokyo mid-session; nobody else has opened
+    })
+    assert marketdata._last_complete_session(rows, universe_size) == "2026-08-20", (
+        "eight of seventy-eight constituents is not a global session, whatever "
+        "the calendar says")
+
+
+def test_the_newest_complete_session_is_still_chosen():
+    import marketdata
+
+    everyone = [f"X{i}" for i in range(78)]
+    rows = _rows({"2026-08-19": everyone, "2026-08-20": everyone})
+    assert marketdata._last_complete_session(rows, 78) == "2026-08-20"
+
+
+def test_a_session_missing_only_europe_is_still_valued():
+    """The common case: Yahoo has not published continental closes yet, but the
+    session genuinely happened and the majority of the index has it."""
+    import marketdata
+
+    rest = [f"X{i}" for i in range(50)]          # US, UK, Japan, Canada
+    europe = [f"E{i}" for i in range(28)]
+    rows = _rows({"2026-08-19": rest + europe, "2026-08-20": rest})
+    assert marketdata._last_complete_session(rows, 78) == "2026-08-20"

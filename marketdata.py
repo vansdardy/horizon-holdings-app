@@ -145,7 +145,16 @@ def fetch_live():
         earliest_fx = min(fx_dates)
         price_rows = [r for r in price_rows if r["date"] >= earliest_fx]
 
-    valuation_date = max(r["date"] for r in price_rows)
+    # NOT max(date): a market that is open right now already has a bar for today
+    # holding its live price. See _last_complete_session.
+    valuation_date = _last_complete_session(price_rows, len(resolved))
+    dropped = [r for r in price_rows if r["date"] > valuation_date]
+    if dropped:
+        ahead = sorted({r["date"] for r in dropped})
+        print(f"[marketdata] ignoring {len(dropped)} bar(s) dated {', '.join(ahead)}: "
+              f"only {len({r['ticker'] for r in dropped})} of {len(resolved)} "
+              f"constituents have reached that session, so it is still in progress")
+        price_rows = [r for r in price_rows if r["date"] <= valuation_date]
 
     # The chart endpoint often has no close yet for the newest session; ask the
     # quote service for those before anything is valued, so this session's NAV
@@ -154,6 +163,42 @@ def fetch_live():
         price_rows, resolved, valuation_date)
 
     return valuation_date, price_rows, fx_rows
+
+
+def _last_complete_session(price_rows, n_constituents):
+    """
+    The newest session most of the index actually traded in.
+
+    `max(date)` is the obvious choice and it is wrong, because a market that is
+    open RIGHT NOW already has a bar for today carrying its live price. Fetch at
+    23:00 in New York and Tokyo is mid-morning: eight Japanese constituents come
+    back with a bar dated tomorrow holding an intraday number, while the other
+    seventy have not started that session at all. Valuing on that date produces
+    a NAV point for a day that has barely happened - eight live prices and
+    seventy closes carried over from the day before - and stores those intraday
+    numbers in the archive as though they were closes.
+
+    So walk back to the newest date a majority of the index has a bar for. A
+    genuinely global session has most of the world in it; a session only Tokyo
+    has reached does not, whatever the calendar says. Bars after that date are
+    dropped rather than stored, because a price taken mid-session is not a close
+    and the archive holds closes.
+
+    A fetch during New York's own trading hours is a milder version of the same
+    thing and is NOT caught by this - the scheduled run happens after that close,
+    which is what the 18:00 default is for.
+    """
+    if not price_rows:
+        return None
+    per_date = {}
+    for r in price_rows:
+        per_date.setdefault(r["date"], set()).add(r["ticker"])
+    # A majority, and never fewer than two, so a tiny universe still works.
+    need = max(2, (n_constituents or len(per_date)) // 2)
+    for d in sorted(per_date, reverse=True):
+        if len(per_date[d]) >= need:
+            return d
+    return max(per_date)
 
 
 # ------------------------------------------------- quote gap-fill (live only)

@@ -9,6 +9,34 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.12.1
+
+**Fixed**
+
+- **A fetch run late at night could create a NAV point for a session that had
+  barely started.** The valuation date was the newest date in the fetched data,
+  and a market that is open *right now* already has a bar for today holding its
+  live price. Run "Fetch now" at 23:00 in New York and Tokyo is mid-morning: the
+  eight Japanese constituents return a bar dated tomorrow with an intraday
+  number in it, while the other seventy have not reached that session at all.
+
+  The result was a NAV dot for a day that had barely happened — eight live
+  prices and seventy closes carried over from the day before — plus those
+  intraday numbers stored in the archive as though they were closes.
+
+  The valuation date is now the newest session a **majority of the index** has a
+  bar for, and bars after it are discarded rather than stored. A genuinely
+  global session has most of the world in it; a session only Tokyo has reached
+  does not, whatever the calendar says. A session merely missing Europe's
+  not-yet-published closes still qualifies, which is the common case and must
+  keep working.
+
+  This is not caught for a fetch during New York's own trading hours, which is a
+  milder version of the same thing — the scheduled run happens after that close,
+  which is what the 18:00 default is for.
+
+---
+
 ## v1.12.0
 
 Closes the European price lag reported in v1.11.1, from both ends.
