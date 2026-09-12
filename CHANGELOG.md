@@ -9,6 +9,48 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.14.0
+
+**Changed**
+
+- **Dividends now buy their shares on the pay date, not the ex-date.** The cash
+  is still credited on the ex-dividend date — that is the morning the share
+  price gaps down, so the value is real from then, and crediting it later would
+  put a dip in the value series that never happened. What changed is that the
+  money now waits as cash until the pay date and buys shares at the price of the
+  session it actually arrived in. v1.13.0 did both at once, which meant it
+  bought at a price that predated the cash by two to five weeks.
+
+**Added**
+
+- **A ledger of income that has been earned but not yet paid.** The dividend
+  section now separates three things that used to be one number: shares bought
+  with income, cash waiting on a pay date, and the remainder too small to buy a
+  whole share. The history shows each payment's ex-date and pay date side by
+  side, and says whether it has been reinvested yet.
+- **Pay dates are read from Yahoo and checked before use.** Yahoo updates a
+  listing's ex-date and its pay date on different schedules, so the two can
+  describe different payments — every Swiss constituent currently reports a pay
+  date a full year before its own ex-date, because those pay annually and the
+  field lags by exactly one cycle. A pay date is accepted only if it falls on or
+  after its ex-date and within 60 days of it.
+- **Income with no published pay date waits as cash.** Yahoo publishes pay dates
+  for North American listings only — 31 of the 78, about half the index by
+  weight. For a London, Tokyo or continental European constituent the dividend
+  is still credited on the ex-date and still counted in the fund's value, but it
+  is not reinvested on an inferred date. It waits, and the annual rebalance
+  absorbs it along with everything else. Idle cash understates compounding
+  slightly and says so on screen; a guessed purchase date would write a share
+  count that was never real into a permanent record.
+
+**Fixed**
+
+- A log line about a rejected pay date contained an em dash, which is the one
+  character class that has already crashed this backend on a Windows console
+  running the system codepage rather than UTF-8.
+
+---
+
 ## v1.13.0
 
 **Added**

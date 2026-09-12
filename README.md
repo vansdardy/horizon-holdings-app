@@ -139,6 +139,33 @@ pulled live show a small dot; those without one are static estimates. Hovering t
 which quarter a number came from, and whether a P/E is trailing or forward — those can differ
 by several times for a richly valued company.
 
+### Dividends are reinvested into the company that paid them
+
+The index receives dividends, and the shares they buy are kept in a **separate book** so the
+part of the fund built out of income stays visible instead of being blended into the main
+holdings. Those shares earn dividends themselves, which is what makes it compound, and the
+annual rebalance absorbs the whole book back into the index. Your own positions under
+**My Positions** are untouched by any of this.
+
+Two dates matter, and the app treats them differently on purpose:
+
+- **Ex-dividend date** — the cash is credited. The share price gaps down by roughly the
+  payment that morning, so the value is real from then. Crediting it only when the money
+  arrives would show a fall in value followed weeks later by an unexplained jump.
+- **Pay date** — the cash buys shares, at the price of the session it actually arrived in.
+  Money that has not been paid cannot buy anything, and the relevant price is the one on the
+  day of the purchase.
+
+**When no pay date is published the money simply stays as cash.** Yahoo provides one for North
+American listings only — about half this index by weight. For a London, Tokyo or continental
+European constituent the income is still credited on the ex-date and still counted in the
+fund's value, but it waits as cash until the annual rebalance absorbs it rather than buying
+shares on a date that would have to be inferred. Idle cash understates compounding a little,
+and says so on screen; a guessed purchase date writes a share count that was never real into a
+record meant to last decades. Pay dates that *are* published are checked before use — Yahoo
+updates the ex-date and the pay date on different schedules, so a value that falls before its
+own ex-date, or a whole quarter after it, is describing a different payment and is discarded.
+
 ---
 
 ## Build from source
@@ -521,6 +548,7 @@ Interactive documentation at <http://127.0.0.1:8000/docs> while the backend is r
 | `GET /api/prices` | Latest prices and exchange rates |
 | `GET /api/archive` | Price archive statistics |
 | `GET /api/fundamentals` | P/E, dividend yield, beta from the last quarterly fetch |
+| `GET /api/dividends` | The reinvested-income book, cash awaiting a pay date, and the payment history |
 | `POST /api/refresh_fundamentals` | Fetch fundamentals; `?force=true` ignores the quarterly gate |
 | `GET /api/price_history` | Price series, filterable by ticker and date |
 | `GET /api/price_history.csv` | The whole archive as CSV |

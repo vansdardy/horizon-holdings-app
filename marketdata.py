@@ -191,6 +191,80 @@ def _collect_dividends(ticker, symbol, data, out):
                     "per_share": amount / div})
 
 
+# A pay date further than this from its ex-date is not describing the payment we
+# just accrued. Real lags on the listings that publish one are two to five weeks
+# (KO: 16 days, JNJ: 14); a quarter is 91. Sitting between the two catches
+# Yahoo's habit of reporting a pay date that is one payment cycle out of step
+# with the ex-date it sits beside.
+MAX_PAY_LAG_DAYS = 60
+
+
+def fetch_pay_dates(items):
+    """
+    {(ticker, ex_date): pay_date or None} for accruals about to be recorded.
+
+    Yahoo exposes no pay-date SERIES, only a scalar `dividendDate` on the
+    per-ticker `.info` blob — one HTTP round-trip each, the slow pipeline. It is
+    called for the handful of constituents that went ex on this fetch, never for
+    all 78.
+
+    The value is not trusted as given. Measured across the real universe it is
+    absent for every London, Tokyo and continental European listing (47 of 78),
+    and present but a full year stale for all six Swiss names — Yahoo updates the
+    ex-date while leaving the pay date on the previous payment, which is glaring
+    on an annual payer and quiet on a quarterly one. So a pay date is accepted
+    only when it falls on or after its own ex-date and within MAX_PAY_LAG_DAYS of
+    it, and anything else is returned as None: the money then waits as cash
+    rather than buying shares on a date that was inferred rather than known.
+    """
+    items = list(items)
+    if not items or USE_MOCK:
+        return {(t, d): None for t, d in items}
+
+    import yfinance as yf
+
+    out = {}
+    for ticker, ex_date in items:
+        meta = u.UNIVERSE.get(ticker)
+        out[(ticker, ex_date)] = None
+        if meta is None:
+            continue
+        try:
+            raw = yf.Ticker(meta["yahoo"]).info.get("dividendDate")
+            pay = _as_date(raw)
+            ex = dt.date.fromisoformat(ex_date)
+        except Exception as e:
+            print(f"[dividends] {ticker}: no pay date ({type(e).__name__})")
+            continue
+        if pay is None:
+            continue
+        lag = (pay - ex).days
+        if 0 <= lag <= MAX_PAY_LAG_DAYS:
+            out[(ticker, ex_date)] = pay.isoformat()
+        else:
+            print(f"[dividends] {ticker}: ignoring pay date {pay} for ex-date "
+                  f"{ex_date} ({lag}d apart, not this payment)")
+    return out
+
+
+def _as_date(raw):
+    """Yahoo hands these back as a unix timestamp; be liberal about the rest."""
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        if raw < 1e8:
+            return None
+        return dt.datetime.fromtimestamp(raw, dt.timezone.utc).date()
+    if isinstance(raw, dt.datetime):
+        return raw.date()
+    if isinstance(raw, dt.date):
+        return raw
+    try:
+        return dt.date.fromisoformat(str(raw)[:10])
+    except ValueError:
+        return None
+
+
 def _session_has_ended(day, tickers, resolved):
     """
     Have the markets that DID trade on `day` actually finished that session?

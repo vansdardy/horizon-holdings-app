@@ -114,6 +114,25 @@ CREATE TABLE IF NOT EXISTS dividend_cash (
     amount REAL NOT NULL
 );
 
+-- Dividend money that has gone ex but has not been paid yet. It is already real
+-- value on the ex-date -- the share price gaps down that morning -- so it counts
+-- towards NAV from that moment. What it cannot do is buy shares: the cash does
+-- not exist until the pay date, and shares can only be bought at the price of
+-- the day the money actually arrives.
+--
+-- A NULL pay_date means Yahoo publishes none for this listing, which is the case
+-- for every London, Tokyo and continental European constituent -- 52% of the
+-- fund by weight. That cash waits here indefinitely and is absorbed by the annual
+-- rebalance. Deliberate: cash sitting idle is honest, whereas buying on a guessed
+-- date puts a fabricated share count into the record permanently.
+CREATE TABLE IF NOT EXISTS dividend_pending (
+    ex_date  TEXT NOT NULL,
+    ticker   TEXT NOT NULL,
+    amount   REAL NOT NULL,      -- local currency
+    pay_date TEXT,
+    PRIMARY KEY (ex_date, ticker)
+);
+
 -- One row per dividend actually received: the record of where the reinvested
 -- shares came from.
 CREATE TABLE IF NOT EXISTS dividend_events (
@@ -126,6 +145,8 @@ CREATE TABLE IF NOT EXISTS dividend_events (
     price         REAL,               -- close used to reinvest
     shares_bought INTEGER NOT NULL,
     cash_after    REAL NOT NULL,      -- remainder carried to the next payment
+    pay_date      TEXT,               -- NULL when the listing does not publish one
+    settled_date  TEXT,               -- session the cash actually bought shares
     PRIMARY KEY (date, ticker)
 );
 
@@ -176,6 +197,18 @@ def init():
             c.execute("ALTER TABLE nav_history ADD COLUMN stale_tickers TEXT")
         if "revised_at" not in ncols:
             c.execute("ALTER TABLE nav_history ADD COLUMN revised_at TEXT")
+        # 1.13.0 credited and reinvested on the ex-date in one step, so its
+        # dividend_events rows have no notion of when the cash arrived.
+        dcols = {r["name"] for r in c.execute("PRAGMA table_info(dividend_events)")}
+        if dcols and "pay_date" not in dcols:
+            c.execute("ALTER TABLE dividend_events ADD COLUMN pay_date TEXT")
+        if dcols and "settled_date" not in dcols:
+            c.execute("ALTER TABLE dividend_events ADD COLUMN settled_date TEXT")
+            # Anything 1.13.0 already paid DID buy its shares, on the ex-date,
+            # under the rule of the day. Leaving settled_date NULL would show
+            # those payments as still awaiting cash that arrived long ago.
+            c.execute("UPDATE dividend_events SET settled_date=date "
+                      "WHERE settled_date IS NULL AND shares_bought > 0")
     _migrate_renamed_tickers()
     _migrate_pence_quotes()
 
@@ -570,11 +603,64 @@ def record_dividend(row):
     with conn() as c:
         c.execute(
             "INSERT INTO dividend_events(date,ticker,per_share,ccy,shares_held,gross,"
-            "price,shares_bought,cash_after) VALUES(?,?,?,?,?,?,?,?,?) "
+            "price,shares_bought,cash_after,pay_date,settled_date) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(date,ticker) DO NOTHING",
             (row["date"], row["ticker"], row["per_share"], row["ccy"],
              row["shares_held"], row["gross"], row.get("price"),
-             row["shares_bought"], row["cash_after"]))
+             row["shares_bought"], row["cash_after"],
+             row.get("pay_date"), row.get("settled_date")))
+
+
+def settle_dividend_event(ex_date, ticker, settled_date, price, shares_bought,
+                          cash_after):
+    """Fill in what the accrual eventually bought, once the cash has arrived."""
+    with conn() as c:
+        c.execute(
+            "UPDATE dividend_events SET settled_date=?, price=?, "
+            "shares_bought=shares_bought+?, cash_after=? WHERE date=? AND ticker=?",
+            (settled_date, price, int(shares_bought), float(cash_after),
+             ex_date, ticker))
+
+
+# ---------- dividends awaiting their pay date ----------
+def add_dividend_pending(ex_date, ticker, amount, pay_date):
+    """Idempotent by (ex_date, ticker), matching record_dividend."""
+    with conn() as c:
+        c.execute(
+            "INSERT INTO dividend_pending(ex_date,ticker,amount,pay_date) "
+            "VALUES(?,?,?,?) ON CONFLICT(ex_date,ticker) DO NOTHING",
+            (ex_date, ticker, float(amount), pay_date))
+
+
+def dividend_pending(matured_on=None):
+    """
+    Accruals still waiting. With `matured_on`, only those whose cash has arrived
+    by that session -- which by construction excludes every NULL pay_date, so a
+    listing without a published pay date never settles.
+    """
+    q = "SELECT * FROM dividend_pending"
+    args = ()
+    if matured_on is not None:
+        q += " WHERE pay_date IS NOT NULL AND pay_date <= ?"
+        args = (matured_on,)
+    q += " ORDER BY ex_date, ticker"
+    with conn() as c:
+        return [dict(r) for r in c.execute(q, args)]
+
+
+def drop_dividend_pending(ex_date, ticker):
+    with conn() as c:
+        c.execute("DELETE FROM dividend_pending WHERE ex_date=? AND ticker=?",
+                  (ex_date, ticker))
+
+
+def pending_dividend_cash():
+    """{ticker: amount} of accrued-but-unpaid money, in the listing's currency."""
+    with conn() as c:
+        return {r["ticker"]: r["total"] for r in c.execute(
+            "SELECT ticker, SUM(amount) AS total FROM dividend_pending "
+            "GROUP BY ticker")}
 
 
 def dividend_paid_on(date, ticker):
@@ -592,10 +678,17 @@ def dividend_events(limit=None):
 
 
 def clear_dividend_state():
-    """Fold the dividend book away — called when a rebalance absorbs it."""
+    """
+    Fold the dividend book away — called when a rebalance absorbs it.
+
+    Pending accruals go too. Their cash is part of the value being re-allocated,
+    and a payment still waiting on a pay date that will fall after the rebalance
+    would otherwise buy shares for a book that no longer exists.
+    """
     with conn() as c:
         c.execute("DELETE FROM dividend_holdings")
         c.execute("DELETE FROM dividend_cash")
+        c.execute("DELETE FROM dividend_pending")
 
 
 def set_nav_staleness(date, stale_tickers):

@@ -209,30 +209,127 @@ def test_simulate_touches_no_stored_state(db, fx, prices):
 # Reinvested income is kept in its own book so its contribution stays visible,
 # it compounds because the shares it buys earn dividends themselves, and the
 # annual rebalance absorbs it.
+#
+# The rule these tests exist to protect: the cash is credited on the EX-DATE
+# (the price gaps down that morning, so the value is real from then) but it buys
+# shares only on the PAY DATE, at the price of that session. Money that has not
+# arrived cannot buy anything.
 
 def _div(ticker, date, per_share):
     return [{"ticker": ticker, "date": date, "per_share": per_share}]
 
 
-def test_a_dividend_buys_shares_of_the_same_stock(db, fx, prices):
+def _pay(ticker, ex_date, pay_date):
+    return {(ticker, ex_date): pay_date}
+
+
+def _at(price, prices):
+    return {t: price for t in prices}
+
+
+def test_the_ex_date_credits_cash_and_buys_nothing(db, fx, prices):
     import index_engine as ie
 
     ie.update("2026-06-01", prices, fx)          # seed
     held = db.load_index_state()[0]["KO"]
     assert held > 0
 
-    # Every constituent is priced at 10.0 by the fixture; pay 1.0 a share.
-    events = ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))
+    r = ie.apply_dividends("2026-06-02", prices, fx,
+                           _div("KO", "2026-06-02", 1.0),
+                           _pay("KO", "2026-06-02", "2026-06-20"))
 
-    assert len(events) == 1
-    e = events[0]
+    assert len(r["accrued"]) == 1 and r["settled"] == []
+    e = r["accrued"][0]
     assert e["shares_held"] == held
     assert e["gross"] == pytest.approx(held * 1.0)
-    assert e["shares_bought"] == int(held * 1.0 // 10.0), "whole shares at the close"
+    assert e["shares_bought"] == 0, "nothing may be bought before the cash arrives"
+    assert e["pay_date"] == "2026-06-20"
 
     shares, cash = db.load_dividend_state()
-    assert shares["KO"] == e["shares_bought"]
-    assert 0 <= cash["KO"] < 10.0, "the remainder waits for the next payment"
+    assert shares == {}, "no shares on the ex-date"
+    assert db.pending_dividend_cash()["KO"] == pytest.approx(held * 1.0)
+
+
+def test_accrued_cash_is_in_nav_before_it_is_paid(db, fx, prices):
+    """The reason accrual happens on the ex-date at all: the price gaps down
+    that morning, so leaving the money out would show a dip that never happened."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    before = [h for h in db.nav_history() if h["date"] == "2026-06-01"][0]["nav_usd"]
+    held = db.load_index_state()[0]["KO"]
+
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-20"))
+    r = ie.update("2026-06-02", prices, fx)
+
+    assert r["dividend_equity_usd"] == 0, "no shares yet"
+    assert r["dividend_cash_usd"] == pytest.approx(held * 1.0)
+    assert r["nav_usd"] == pytest.approx(before + held * 1.0), (
+        "income accrued must be in NAV the day the price gaps down")
+
+
+def test_the_pay_date_buys_at_the_price_of_that_session(db, fx, prices):
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    held = db.load_index_state()[0]["KO"]
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-20"))
+
+    # The price has doubled between the ex-date and the pay date. The purchase
+    # must use 20.0 - the price on the day the money actually arrived.
+    later = _at(20.0, prices)
+    r = ie.apply_dividends("2026-06-20", later, fx, [], None)
+
+    assert r["accrued"] == [] and len(r["settled"]) == 1
+    st = r["settled"][0]
+    assert st["price"] == 20.0
+    assert st["shares_bought"] == int(held * 1.0 // 20.0)
+    assert db.load_dividend_state()[0]["KO"] == st["shares_bought"]
+    assert db.pending_dividend_cash() == {}, "the accrual is no longer pending"
+
+
+def test_settlement_runs_on_a_session_with_no_dividends(db, fx, prices):
+    """A pay date almost always lands on a session where nothing goes ex, so an
+    early return on an empty div_rows would strand every payment forever."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-20"))
+
+    r = ie.apply_dividends("2026-06-22", prices, fx, [], None)
+    assert len(r["settled"]) == 1, "a pay date already passed must still settle"
+
+
+def test_a_pay_date_on_a_closed_day_settles_on_the_next_session(db, fx, prices):
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-20"))   # a Saturday
+
+    assert ie.apply_dividends("2026-06-19", prices, fx, [], None)["settled"] == []
+    assert len(ie.apply_dividends("2026-06-22", prices, fx, [], None)["settled"]) == 1
+
+
+def test_without_a_pay_date_the_cash_waits_indefinitely(db, fx, prices):
+    """As specified: idle cash is preferable to shares bought on a guessed date.
+    Yahoo publishes no pay date for any London, Tokyo or European listing."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    held = db.load_index_state()[0]["KO"]
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", None))
+
+    for day in ("2026-06-20", "2026-09-01", "2026-12-31"):
+        assert ie.apply_dividends(day, prices, fx, [], None)["settled"] == []
+
+    assert db.load_dividend_state()[0] == {}, "no shares were ever bought"
+    assert db.pending_dividend_cash()["KO"] == pytest.approx(held * 1.0), (
+        "but the money is still there, and still counted in NAV")
 
 
 def test_dividend_shares_earn_dividends_too(db, fx, prices):
@@ -242,27 +339,62 @@ def test_dividend_shares_earn_dividends_too(db, fx, prices):
     ie.update("2026-06-01", prices, fx)
     main = db.load_index_state()[0]["KO"]
 
-    first = ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))[0]
-    bought = first["shares_bought"]
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-20"))
+    settled = ie.apply_dividends("2026-06-20", prices, fx, [], None)["settled"]
+    bought = settled[0]["shares_bought"]
     assert bought > 0
 
-    second = ie.apply_dividends("2026-09-02", prices, fx, _div("KO", "2026-09-02", 1.0))[0]
+    second = ie.apply_dividends("2026-09-02", prices, fx,
+                                _div("KO", "2026-09-02", 1.0),
+                                _pay("KO", "2026-09-02", "2026-09-20"))["accrued"][0]
     assert second["shares_held"] == main + bought, (
         "the second payment must be paid on the shares the first one bought")
 
 
-def test_the_same_dividend_is_never_paid_twice(db, fx, prices):
+def test_the_same_dividend_is_never_accrued_twice(db, fx, prices):
     """A ten-day fetch window sees the same ex-date on many consecutive days."""
     import index_engine as ie
 
     ie.update("2026-06-01", prices, fx)
     rows = _div("KO", "2026-06-02", 1.0)
+    pays = _pay("KO", "2026-06-02", "2026-06-20")
 
-    first = ie.apply_dividends("2026-06-02", prices, fx, rows)
-    again = ie.apply_dividends("2026-06-02", prices, fx, rows)
+    first = ie.apply_dividends("2026-06-02", prices, fx, rows, pays)
+    again = ie.apply_dividends("2026-06-02", prices, fx, rows, pays)
 
-    assert len(first) == 1 and again == []
+    assert len(first["accrued"]) == 1 and again["accrued"] == []
+    held = db.load_index_state()[0]["KO"]
+    assert db.pending_dividend_cash()["KO"] == pytest.approx(held * 1.0)
+
+
+def test_the_same_dividend_is_never_settled_twice(db, fx, prices):
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-20"))
+
+    first = ie.apply_dividends("2026-06-20", prices, fx, [], None)["settled"]
+    again = ie.apply_dividends("2026-06-21", prices, fx, [], None)["settled"]
+
+    assert again == []
     assert db.load_dividend_state()[0]["KO"] == first[0]["shares_bought"]
+
+
+def test_an_unpriced_constituent_stays_pending(db, fx, prices):
+    """Settling at a guessed price would be worse than settling a session late."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-20"))
+
+    no_ko = {t: v for t, v in prices.items() if t != "KO"}
+    assert ie.apply_dividends("2026-06-20", no_ko, fx, [], None)["settled"] == []
+    assert db.pending_dividend_cash().get("KO", 0) > 0
+
+    assert len(ie.apply_dividends("2026-06-21", prices, fx, [], None)["settled"]) == 1
 
 
 def test_dividend_shares_count_towards_nav(db, fx, prices):
@@ -271,8 +403,10 @@ def test_dividend_shares_count_towards_nav(db, fx, prices):
     ie.update("2026-06-01", prices, fx)
     before = [h for h in db.nav_history() if h["date"] == "2026-06-01"][0]["nav_usd"]
 
-    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))
-    r = ie.update("2026-06-02", prices, fx)
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-03"))
+    ie.apply_dividends("2026-06-03", prices, fx, [], None)
+    r = ie.update("2026-06-03", prices, fx)
 
     assert r["dividend_equity_usd"] > 0
     assert r["nav_usd"] > before, "income received must raise NAV, not vanish"
@@ -284,10 +418,12 @@ def test_the_rebalance_absorbs_the_dividend_book(db, fx, prices):
     import index_engine as ie
 
     ie.update("2026-06-01", prices, fx)
-    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0),
+                       _pay("KO", "2026-06-02", "2026-06-03"))
+    ie.apply_dividends("2026-06-03", prices, fx, [], None)
     assert db.load_dividend_state()[0].get("KO", 0) > 0
 
-    before = ie.update("2026-06-02", prices, fx)["nav_usd"]
+    before = ie.update("2026-06-03", prices, fx)["nav_usd"]
 
     r = ie.update("2027-01-04", prices, fx)      # first session of a new year
     assert r["rebalanced"] is True
@@ -297,5 +433,24 @@ def test_the_rebalance_absorbs_the_dividend_book(db, fx, prices):
     assert r["dividend_equity_usd"] == 0
 
     assert r["nav_usd"] == pytest.approx(before, rel=1e-6), (
-        "absorbing the book must move the shares, not the value — anything else "
+        "absorbing the book must move the shares, not the value - anything else "
         "means a year of reinvested income was dropped on the floor")
+
+
+def test_the_rebalance_absorbs_cash_still_waiting_on_a_pay_date(db, fx, prices):
+    """Money accrued but never paid still belongs to the fund, and a pay date
+    falling after the rebalance must not buy for a book that no longer exists."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    held = db.load_index_state()[0]["KO"]
+    ie.apply_dividends("2026-12-30", prices, fx, _div("KO", "2026-12-30", 1.0),
+                       _pay("KO", "2026-12-30", None))          # never settles
+    before = ie.update("2026-12-30", prices, fx)["nav_usd"]
+    assert db.pending_dividend_cash()["KO"] == pytest.approx(held * 1.0)
+
+    r = ie.update("2027-01-04", prices, fx)
+    assert r["rebalanced"] is True
+    assert db.pending_dividend_cash() == {}, "pending cash is absorbed too"
+    assert r["nav_usd"] == pytest.approx(before, rel=1e-6), (
+        "absorbing it must move the value into the main book, not discard it")

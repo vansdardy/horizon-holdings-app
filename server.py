@@ -165,6 +165,19 @@ def run_daily_update(day_offset=0, window=1):
             if not todo:
                 todo = [valuation_date]
 
+        # A pay date costs one request per constituent (Yahoo exposes no series
+        # for them), so ask only about dividends this fetch is recording for the
+        # first time — a handful on the days there are any, none on most days.
+        fresh = sorted({(r["ticker"], r["date"]) for r in div_rows
+                        if not db.dividend_paid_on(r["date"], r["ticker"])})
+        try:
+            pay_dates = marketdata.fetch_pay_dates(fresh)
+        except Exception as e:
+            # Without a pay date the money waits as cash, which is the same
+            # outcome as for the 47 constituents that never publish one.
+            print(f"[dividends] pay dates unavailable ({type(e).__name__}: {e})")
+            pay_dates = {}
+
         results, backfilled, skipped = [], [], []
         # Every currency except the internal numeraire needs a USD rate; the
         # base/reporting currency needs one too (unless it IS the numeraire).
@@ -189,23 +202,31 @@ def run_daily_update(day_offset=0, window=1):
 
             prices = {t: v["close"] for t, v in asof.items()}
             stale = [t for t, v in asof.items() if v["date"] < d]
-            # Credit any dividend going ex on this session BEFORE valuing it, so
-            # the shares it buys are marked at this session's close rather than
-            # appearing a day late.
+            # Accrue anything going ex on this session, and buy shares for
+            # anything whose pay date has arrived, BEFORE valuing it — so both
+            # the cash and the shares it buys are in this session's NAV rather
+            # than appearing a day late.
             try:
-                paid = index_engine.apply_dividends(d, prices, fx, div_rows)
+                paid = index_engine.apply_dividends(d, prices, fx, div_rows,
+                                                    pay_dates)
             except Exception as e:
                 # Income must never cost the day its NAV point.
                 print(f"[dividends] {d}: skipped ({type(e).__name__}: {e})")
-                paid = []
+                paid = {"accrued": [], "settled": []}
             try:
                 r = index_engine.update(d, prices, fx)
             except index_engine.StaleValuationError as e:
                 skipped.append({"date": d, "reason": str(e)})
                 continue
-            r["dividends"] = [{"ticker": e["ticker"], "gross": e["gross"],
-                               "ccy": e["ccy"], "shares_bought": e["shares_bought"]}
-                              for e in paid]
+            r["dividends"] = {
+                "accrued": [{"ticker": e["ticker"], "gross": e["gross"],
+                             "ccy": e["ccy"], "pay_date": e["pay_date"]}
+                            for e in paid["accrued"]],
+                "settled": [{"ticker": e["ticker"], "ccy": e["ccy"],
+                             "price": e["price"],
+                             "shares_bought": e["shares_bought"]}
+                            for e in paid["settled"]],
+            }
             r["stale_constituents"] = len(stale)
             r["stale_tickers"] = sorted(stale)[:10]
             # Persist which constituents were carried over, so a later fetch can
@@ -496,6 +517,12 @@ def api_dividends():
     are added together.
     """
     shares, cash = db.load_dividend_state()
+    # Two different kinds of cash, and conflating them would hide the thing the
+    # user most needs to see: money that is waiting on a pay date (or on a pay
+    # date that will never be published) versus money merely too small to buy a
+    # whole share.
+    awaiting = db.pending_dividend_cash()
+    pending_rows = db.dividend_pending()
     asof = db.latest_price_date()
     prices = db.prices_asof(asof) if asof else {}
     fx = db.fx_asof(asof) if asof else {}
@@ -509,7 +536,7 @@ def api_dividends():
             return None
 
     rows, equity_usd = [], 0.0
-    for t in sorted(set(shares) | set(cash)):
+    for t in sorted(set(shares) | set(cash) | set(awaiting)):
         meta = u.UNIVERSE.get(t)
         if meta is None:
             continue
@@ -531,18 +558,25 @@ def api_dividends():
             "price_date": quote["date"] if quote else None,
             "value_local": value_local, "value_usd": value_usd,
             "value_base": to_base(value_usd),
-            "pending_cash": cash.get(t, 0.0),
+            "cash_remainder": cash.get(t, 0.0),
+            "cash_awaiting": awaiting.get(t, 0.0),
         })
 
-    cash_usd = 0.0
-    for t, amount in cash.items():
-        meta = u.UNIVERSE.get(t)
-        if not meta or not amount:
-            continue
-        try:
-            cash_usd += index_engine.to_usd(amount, meta["ccy"], fx)
-        except ValueError:
-            pass
+    def in_usd(by_ticker):
+        total = 0.0
+        for t, amount in by_ticker.items():
+            meta = u.UNIVERSE.get(t)
+            if not meta or not amount:
+                continue
+            try:
+                total += index_engine.to_usd(amount, meta["ccy"], fx)
+            except ValueError:
+                pass
+        return total
+
+    remainder_usd = in_usd(cash)
+    awaiting_usd = in_usd(awaiting)
+    cash_usd = remainder_usd + awaiting_usd
 
     events = db.dividend_events()
     for e in events:
@@ -566,9 +600,22 @@ def api_dividends():
             "equity_base": to_base(equity_usd), "cash_base": to_base(cash_usd),
             "total_base": to_base(equity_usd + cash_usd),
             "share_of_nav": ((equity_usd + cash_usd) / nav_usd) if nav_usd else 0.0,
+            # Shares actually bought, as opposed to the whole book. Since cash
+            # now includes income accrued but not yet paid, reporting the total
+            # under a "bought with income" label would credit the reinvestment
+            # with money that has not bought anything.
+            "equity_share_of_nav": (equity_usd / nav_usd) if nav_usd else 0.0,
             "n_positions": sum(1 for r in rows if r["shares"]),
             "n_payments": len(events),
             "gross_base_total": sum(e["gross_base"] or 0 for e in events),
+            "remainder_base": to_base(remainder_usd),
+            "awaiting_base": to_base(awaiting_usd),
+            "n_awaiting": len(pending_rows),
+            # Accruals that will never settle on their own, because the listing
+            # publishes no pay date. They are released by the annual rebalance.
+            "n_no_pay_date": sum(1 for r in pending_rows if not r["pay_date"]),
+            "next_pay_date": min((r["pay_date"] for r in pending_rows
+                                  if r["pay_date"]), default=None),
         },
     }
 

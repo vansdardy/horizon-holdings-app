@@ -654,6 +654,8 @@ python server.py            # → http://127.0.0.1:8000</pre>
           <h3 style="font-family:var(--serif);font-size:19px;font-weight:600;margin-bottom:6px;"
               data-i18n="div.title">Reinvested dividends</h3>
           <div class="section-desc" data-i18n-html="div.desc"></div>
+          <div class="section-desc" data-i18n-html="div.payNote"
+               style="border-left:2px solid var(--rule);padding-left:12px;"></div>
           <div id="divKpis" class="kpi-row" style="margin-bottom:16px;"></div>
           <div id="divEmpty" class="status-msg" style="display:none;" data-i18n="div.empty"></div>
           <div id="divTables">
@@ -666,7 +668,8 @@ python server.py            # → http://127.0.0.1:8000</pre>
                     <th class="num" data-i18n="div.thShares">Shares from income</th>
                     <th class="num"><span data-i18n="hold.thPrice">Price</span><div style="font-weight:400;opacity:.6" data-i18n="posTh.local">local</div></th>
                     <th class="num"><span data-i18n="hold.thValue">Market value</span><div style="font-weight:400;opacity:.6" id="divCcyHdr">—</div></th>
-                    <th class="num" data-i18n="div.thPending">Awaiting reinvestment</th>
+                    <th class="num" data-i18n="div.thAwaiting">Awaiting pay date</th>
+                    <th class="num" data-i18n="div.thRemainder">Remainder</th>
                   </tr>
                 </thead>
                 <tbody id="divBody"></tbody>
@@ -679,6 +682,7 @@ python server.py            # → http://127.0.0.1:8000</pre>
                 <thead>
                   <tr>
                     <th data-i18n="div.thExDate">Ex-date</th>
+                    <th data-i18n="div.thPayDate">Pay date</th>
                     <th data-i18n="th.company">Company</th>
                     <th class="num" data-i18n="div.thPerShare">Per share</th>
                     <th class="num" data-i18n="div.thHeld">Shares held</th>
@@ -1479,15 +1483,26 @@ function renderDividends(){
   $('divKpis').style.display = empty ? 'none' : '';
   if(empty) return;
 
+  // Cash waiting on a pay date is deliberately its own number. It is already in
+  // NAV, but it has bought nothing yet, and for the London/Tokyo/European names
+  // it never will on its own — so folding it into "bought with income" would
+  // overstate how much of the fund the reinvestment has actually built.
+  const awaitSub = T.n_no_pay_date
+    ? t('div.awaitingSub', {n: T.n_awaiting, k: T.n_no_pay_date})
+    : (T.next_pay_date ? t('div.awaitingNext', {d: T.next_pay_date})
+                       : t('div.awaitingSub', {n: T.n_awaiting, k: 0}));
   $('divKpis').innerHTML = [
-    [t('div.value'), isym + money(T.total_base, IB), t('div.valueSub', {v: fmtPct(T.share_of_nav, 4)})],
+    [t('div.value'), isym + money(T.equity_base, IB), t('div.valueSub', {v: fmtPct(T.equity_share_of_nav, 4)})],
     [t('div.received'), isym + money(T.gross_base_total, IB), t('div.receivedSub', {n: T.n_payments})],
+    [t('div.awaiting'), isym + money(T.awaiting_base || 0, IB), awaitSub],
     [t('div.positions'), String(T.n_positions), t('div.positionsSub')],
   ].map(([l,v,sub]) =>
     `<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${sub}</div></div>`).join('');
 
-  const rows = DIV.holdings.filter(h => h.shares || h.pending_cash)
+  const cash = h => (h.cash_awaiting || 0) + (h.cash_remainder || 0);
+  const rows = DIV.holdings.filter(h => h.shares || cash(h))
                            .sort((a,b) => (b.value_base||0) - (a.value_base||0));
+  const localCash = (amount, ccy) => amount ? money(amount, ccy) + ' ' + ccy : '—';
   $('divBody').innerHTML = rows.map(h => `
     <tr>
       <td class="tk">${h.ticker}</td>
@@ -1495,18 +1510,28 @@ function renderDividends(){
       <td class="num">${h.shares.toLocaleString()}</td>
       <td class="num">${h.price == null ? '—' : money(h.price, h.ccy)}${staleTag(h.price_date)}</td>
       <td class="num">${h.value_base == null ? '—' : money(h.value_base, IB)}</td>
-      <td class="num" style="color:var(--text-dim)">${h.pending_cash ? money(h.pending_cash, h.ccy) + ' ' + h.ccy : '—'}</td>
+      <td class="num" style="color:var(--text-dim)">${localCash(h.cash_awaiting, h.ccy)}</td>
+      <td class="num" style="color:var(--text-dim)">${localCash(h.cash_remainder, h.ccy)}</td>
     </tr>`).join('');
 
-  $('divHistBody').innerHTML = DIV.events.map(e => `
+  const dim = txt => `<span style="color:var(--text-dim)">${txt}</span>`;
+  $('divHistBody').innerHTML = DIV.events.map(e => {
+    // Three distinct states, and the difference matters: bought, waiting for a
+    // known pay date, or waiting on a pay date that will never be published.
+    const bought = e.settled_date
+      ? `<span style="color:var(--gold)">${e.shares_bought.toLocaleString()}</span>`
+      : dim(t(e.pay_date ? 'div.unpaid' : 'div.noPayDate'));
+    return `
     <tr>
       <td class="tk">${e.date}</td>
+      <td class="tk">${e.pay_date || dim('—')}</td>
       <td>${LANG === 'zh' ? (e.name || e.ticker) : (e.name_en || e.name || e.ticker)}</td>
       <td class="num">${money(e.per_share, e.ccy)} ${e.ccy}</td>
       <td class="num">${e.shares_held.toLocaleString()}</td>
       <td class="num">${money(e.gross, e.ccy)} ${e.ccy}</td>
-      <td class="num" style="color:var(--gold)">${e.shares_bought.toLocaleString()}</td>
-    </tr>`).join('');
+      <td class="num">${bought}</td>
+    </tr>`;
+  }).join('');
 }
 
 /* ---------------- staying current ---------------- */

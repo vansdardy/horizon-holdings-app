@@ -302,3 +302,81 @@ def test_a_clear_majority_is_accepted_without_asking_the_quote_service(monkeypat
     rows = _rows({"2026-08-19": rest + europe, "2026-08-20": rest})
     assert marketdata._last_complete_session(rows, 78, {t: t for t in rest + europe}) == "2026-08-20"
     assert asked == [], "a majority session is self-evident; no quote needed"
+
+
+# ------------------------------------------------- dividend pay-date vetting
+# Yahoo reports a pay date beside an ex-date that it updates on a different
+# schedule, so the two can describe different payments. Measured on the real
+# universe: absent for all 47 London / Tokyo / European listings, and a full
+# year stale for all six Swiss ones, because those pay annually and the field
+# lags by exactly one payment cycle. A quarterly payer would lag less visibly.
+
+def _pay_date(monkeypatch, raw, ex_date="2026-09-15"):
+    import marketdata as md
+
+    class FakeTicker:
+        def __init__(self, sym):
+            self.info = {"dividendDate": raw}
+
+    monkeypatch.setattr(md, "USE_MOCK", False)
+    fake = type("M", (), {"Ticker": FakeTicker})
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", fake)
+    return md.fetch_pay_dates([("KO", ex_date)])[("KO", ex_date)]
+
+
+def _ts(iso):
+    import datetime as dt
+
+    d = dt.date.fromisoformat(iso)
+    return int(dt.datetime(d.year, d.month, d.day, tzinfo=dt.timezone.utc).timestamp())
+
+
+def test_a_normal_pay_date_is_accepted(monkeypatch):
+    """KO in real life: ex 2026-09-15, pay 2026-10-01."""
+    assert _pay_date(monkeypatch, _ts("2026-10-01")) == "2026-10-01"
+
+
+def test_a_pay_date_before_its_ex_date_is_rejected(monkeypatch):
+    """The Swiss case: the ex-date moved on, the pay date did not."""
+    assert _pay_date(monkeypatch, _ts("2025-09-20")) is None
+
+
+def test_a_pay_date_a_whole_quarter_out_is_rejected(monkeypatch):
+    """Belongs to the next payment, not the one being accrued."""
+    assert _pay_date(monkeypatch, _ts("2026-12-15")) is None
+
+
+def test_a_missing_pay_date_is_not_invented(monkeypatch):
+    """Every London, Tokyo and European listing lands here. The cash then waits
+    as cash, which is the specified behaviour: idle money beats a guessed date."""
+    assert _pay_date(monkeypatch, None) is None
+
+
+def test_mock_mode_publishes_no_pay_dates():
+    import marketdata as md
+
+    assert md.fetch_pay_dates([("KO", "2026-09-15")]) == {("KO", "2026-09-15"): None}
+
+
+# --------------------------------------------------- the pending-cash ledger
+def test_pending_cash_survives_and_is_cleared_by_the_rebalance(db):
+    db.add_dividend_pending("2026-09-15", "KO", 1000.0, "2026-10-01")
+    db.add_dividend_pending("2026-09-15", "JNJ", 500.0, None)
+
+    assert db.pending_dividend_cash() == {"KO": 1000.0, "JNJ": 500.0}
+    assert len(db.dividend_pending()) == 2
+
+    # Only KO has matured, and only once its pay date has arrived.
+    assert db.dividend_pending(matured_on="2026-09-30") == []
+    matured = db.dividend_pending(matured_on="2026-10-01")
+    assert [r["ticker"] for r in matured] == ["KO"], (
+        "a NULL pay date must never mature, however late the session")
+
+    db.clear_dividend_state()
+    assert db.pending_dividend_cash() == {}
+
+
+def test_an_accrual_is_never_recorded_twice(db):
+    db.add_dividend_pending("2026-09-15", "KO", 1000.0, "2026-10-01")
+    db.add_dividend_pending("2026-09-15", "KO", 1000.0, "2026-10-01")
+    assert db.pending_dividend_cash() == {"KO": 1000.0}

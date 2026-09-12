@@ -229,41 +229,60 @@ def revalue(date, prices, fx, rebalanced, stale_tickers=()):
             "stale_count": len(stale_tickers)}
 
 
-def apply_dividends(date, prices, fx, div_rows):
+def apply_dividends(date, prices, fx, div_rows, pay_dates=None):
     """
-    Credit dividends with an ex-date of `date` and reinvest them.
+    Accrue whatever goes ex on `date`, then settle whatever has been paid by it.
 
-    Three decisions worth stating, because each has a defensible alternative:
+    ACCRUAL AND PURCHASE ARE SEPARATE EVENTS, and this is the decision the whole
+    design turns on:
 
-    EX-DATE, NOT PAY-DATE. A share price gaps down by roughly the dividend on
-    the morning it goes ex. Crediting the cash only when it actually arrives
-    weeks later would show a real drop in NAV followed by an unexplained jump,
-    for something that cost the fund nothing. Accruing on the ex-date is what
-    total-return indices do, and it is the date Yahoo's dividend series is keyed
-    by, so the two line up.
+      * On the EX-DATE the cash is credited. The share price gaps down by roughly
+        the dividend that morning, so the value has to be booked then or the NAV
+        shows a real drop for something that cost the fund nothing. It is held as
+        cash, per constituent, in that constituent's own currency.
+      * On the PAY DATE that cash buys shares, at the price of the session the
+        money actually arrived. Shares cannot be bought with money that has not
+        been paid, and the price that matters is the one on the day of the
+        purchase, not the one two to five weeks earlier.
+
+    An earlier version did both on the ex-date. It kept NAV smooth but bought at
+    a price that predated the cash.
+
+    WHEN NO PAY DATE IS KNOWN THE CASH SIMPLY WAITS. Yahoo publishes no pay date
+    for any London, Tokyo or continental European listing — 52% of this fund by
+    weight — and publishes a stale one for the Swiss names. Rather than infer a
+    date from a per-exchange rule of thumb, that money sits as cash until the
+    annual rebalance absorbs it. Idle cash understates compounding slightly and
+    visibly; a guessed purchase date writes a share count that was never real
+    into a record meant to last decades.
 
     BACK INTO THE SAME STOCK. This is a dividend REINVESTMENT plan, so KO's
-    dividend buys KO. The alternative — pooling everything and buying at target
-    weights — is really a rebalance, and this index rebalances once a year on
-    purpose.
+    dividend buys KO. Pooling everything and buying at target weights would be a
+    rebalance, and this index rebalances once a year on purpose.
 
-    WHOLE SHARES, REMAINDER CARRIED. The same rule the index itself follows. A
-    payment too small to buy a share is not lost; it waits in that constituent's
-    dividend cash and joins the next one, which is precisely what makes the
-    reinvestment compound.
+    WHOLE SHARES, REMAINDER CARRIED — the same rule the index itself follows. A
+    payment too small to buy a share joins that constituent's next one, which is
+    part of what makes the reinvestment compound.
 
-    Dividends are earned on the dividend shares as well as the main holdings —
-    that compounding is the whole point of keeping them.
+    Dividends are earned on the dividend shares as well as the main holdings.
 
-    Returns the events recorded. Idempotent: a re-fetch covering the same window
-    will not pay the same dividend twice, because `dividend_events` is keyed by
-    (date, ticker) and an already-recorded payment is skipped.
+    Returns {"accrued": [...], "settled": [...]}. Both halves are idempotent: a
+    re-fetch covering the same window will not accrue twice (`dividend_events` is
+    keyed by (date, ticker)) nor settle twice (a settled accrual is removed from
+    `dividend_pending`).
     """
+    return {"accrued": accrue_dividends(date, div_rows, pay_dates),
+            "settled": settle_dividends(date, prices)}
+
+
+def accrue_dividends(date, div_rows, pay_dates=None):
+    """Book the cash for every dividend going ex on `date`. Buys nothing."""
     if not div_rows:
         return []
 
+    pay_dates = pay_dates or {}
     main, _ = db.load_index_state()
-    div_shares, div_cash = db.load_dividend_state()
+    div_shares, _ = db.load_dividend_state()
     events = []
 
     for row in sorted(div_rows, key=lambda r: r["ticker"]):
@@ -280,32 +299,84 @@ def apply_dividends(date, prices, fx, div_rows):
             continue
 
         gross = held * float(row["per_share"])
-        pot = div_cash.get(t, 0.0) + gross
-        px = prices.get(t)
-        bought = 0
-        if px and px > 0:
-            bought = int(math.floor(pot / px))
-            pot -= bought * px
-        div_shares[t] = int(div_shares.get(t, 0)) + bought
-        div_cash[t] = pot
+        pay_date = pay_dates.get((t, date))
+        db.add_dividend_pending(date, t, gross, pay_date)
 
         ev = {"date": date, "ticker": t, "per_share": float(row["per_share"]),
               "ccy": meta["ccy"], "shares_held": held, "gross": gross,
-              "price": px, "shares_bought": bought, "cash_after": pot}
+              "price": None, "shares_bought": 0, "cash_after": gross,
+              "pay_date": pay_date, "settled_date": None}
         db.record_dividend(ev)
         events.append(ev)
 
     if events:
-        db.save_dividend_state(div_shares, div_cash)
-        total = sum(e["shares_bought"] for e in events)
-        print(f"[dividends] {date}: {len(events)} payment(s), "
-              f"{total} share(s) reinvested")
+        known = sum(1 for e in events if e["pay_date"])
+        print(f"[dividends] {date}: accrued {len(events)} payment(s), "
+              f"{known} with a known pay date")
     return events
 
 
+def settle_dividends(date, prices):
+    """
+    Turn accrued cash into shares for every payment whose pay date has arrived.
+
+    Runs on EVERY session, not only ones with a dividend on them — a pay date
+    lands weeks after its ex-date and generally on a session where nothing goes
+    ex at all.
+
+    Oldest accrual first, each settled in its own right, so the history can say
+    which payment bought which shares. A constituent with no usable price on this
+    session is left pending and tried again next time rather than being valued at
+    a guess.
+    """
+    matured = db.dividend_pending(matured_on=date)
+    if not matured:
+        return []
+
+    div_shares, div_cash = db.load_dividend_state()
+    settled = []
+
+    for row in matured:
+        t = row["ticker"]
+        meta = u.UNIVERSE.get(t)
+        px = prices.get(t)
+        if meta is None or not px or px <= 0:
+            continue
+
+        pot = div_cash.get(t, 0.0) + float(row["amount"])
+        bought = int(math.floor(pot / px))
+        pot -= bought * px
+        div_shares[t] = int(div_shares.get(t, 0)) + bought
+        div_cash[t] = pot
+
+        db.drop_dividend_pending(row["ex_date"], t)
+        db.settle_dividend_event(row["ex_date"], t, date, px, bought, pot)
+        settled.append({"date": row["ex_date"], "ticker": t, "ccy": meta["ccy"],
+                        "amount": float(row["amount"]), "price": px,
+                        "shares_bought": bought, "cash_after": pot,
+                        "settled_date": date})
+
+    if settled:
+        db.save_dividend_state(div_shares, div_cash)
+        total = sum(e["shares_bought"] for e in settled)
+        print(f"[dividends] {date}: settled {len(settled)} payment(s), "
+              f"{total} share(s) bought")
+    return settled
+
+
 def dividend_book_value(prices, fx):
-    """(equity_usd, cash_usd) of the dividend-bought book, marked at `prices`."""
+    """
+    (equity_usd, cash_usd) of the dividend book, marked at `prices`.
+
+    `cash_usd` covers both the remainder too small to buy a share and the money
+    accrued on an ex-date that has not reached its pay date. The latter is real
+    value from the moment the price gaps down, so leaving it out would make the
+    NAV dip on every ex-date and recover on every pay date — the exact artefact
+    that accruing on the ex-date exists to prevent.
+    """
     shares, cash = db.load_dividend_state()
+    for t, amount in db.pending_dividend_cash().items():
+        cash[t] = cash.get(t, 0.0) + amount
     equity = 0.0
     for t, n in shares.items():
         meta = u.UNIVERSE.get(t)
