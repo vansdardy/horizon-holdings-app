@@ -297,6 +297,39 @@ Two things to know before editing it:
 - Backups must go through SQLite's online backup API (`db.backup_to`, `POST /api/backup`).
   The DB runs in WAL mode, so `cp portfolio.db` while the service is running can silently drop
   committed transactions.
+
+### Never read the database file while the app is running
+
+**While the app holds `portfolio.db` open, every file-level read of it is unreliable — size and
+content, not just mtime.** Windows defers directory metadata updates for open handles, so other
+processes see the last flushed length. SQLite derives the database size from the file length, so
+a reader gets a *truncated, internally consistent, older* database: it opens cleanly, passes
+`PRAGMA integrity_check`, and silently reports state from whenever the metadata was last flushed.
+There is no error to notice.
+
+This has now cost three separate debugging sessions. The third was the worst: a read of the live
+file reported **1 NAV point dated Aug 14** while the backend, at the identical path, reported
+**22 points through Sep 11** and a file 155 KB larger. That nearly led to "your database is
+missing a month of history", and a backup taken through that view was written to the data
+directory named as though it were a pre-upgrade snapshot — restoring it would have destroyed the
+real series. Opening read-only does not help; `?mode=ro` and a plain read-write connect return
+the same stale view.
+
+So, when the app may be running:
+
+- **Ask the API, not the filesystem.** `GET /api/status` (`nav_points`, `last_fetch_ok`,
+  `latest_price_date`, and `config.PORTFOLIO_DB` — the path actually in use), `GET /api/archive`
+  (`db_path` and the true `db_size_bytes`), `GET /api/nav`, `GET /api/export`.
+- **Back up with `POST /api/backup`**, which runs inside the process that owns the handle. The
+  file it writes is safe to read directly, because nothing holds it open.
+- **Cross-check before believing a file read.** `db_size_bytes` from `/api/archive` against the
+  size on disk is the cheapest tell; if they disagree, the filesystem view is stale and every
+  conclusion drawn from it is void.
+- **Find the port first** — it is chosen at runtime, so hardcoding 8000 finds nothing or, worse,
+  a different instance:
+  `Get-NetTCPConnection -State Listen | ? { $_.OwningProcess -eq (Get-Process horizon-backend).Id }`
+- The frozen backend takes ~10 s to start. "No `horizon-backend.exe` running" a moment after
+  launch means it is still booting, not that it failed.
 - Scheduler failures back off and retry within the same day and surface via
   `/api/status.last_fetch_error`; a fundamentals failure is explicitly non-fatal and must never
   block the price/NAV update.
