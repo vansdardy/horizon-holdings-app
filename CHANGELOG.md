@@ -9,6 +9,32 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.14.1
+
+**Fixed**
+
+- **Rebuilt to clear a Smart App Control block.** The v1.14.0 installer was
+  refused by Smart App Control on Windows 11 (Code Integrity event 3077,
+  "Smart App Control Block"), while every release from v1.6.0 to v1.13.0
+  installed without complaint. Nothing in the build changed to cause it: the
+  build configuration differs from v1.12.1 only by the version string,
+  `requirements.txt` is identical, no dependency was added, the packaged file
+  list matches the freeze exactly, and Microsoft Defender scans the installer
+  clean. The verdict comes from Microsoft's reputation service, which rates the
+  specific bytes of an unsigned binary; a PyInstaller bundle that unpacks a
+  Python interpreter sits close to the boundary those classifiers draw, and
+  this build landed on the wrong side of it.
+
+  This release is the same code rebuilt, which changes timestamps and resource
+  ordering and so produces a different binary to be rated. That is a workaround,
+  not a fix. The durable answer is code signing, which lets reputation accrue to
+  a certificate instead of resetting with every release.
+
+  No functional change. If v1.14.0 installed for you, there is nothing here you
+  need.
+
+---
+
 ## v1.14.0
 
 **Changed**
