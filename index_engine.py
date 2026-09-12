@@ -140,8 +140,19 @@ def update(date, prices, fx):
                 raise StaleValuationError(
                     f"cannot rebalance: {len(unpriced)} held positions have no price "
                     f"({', '.join(sorted(unpriced)[:8])})")
-            holdings, cash = _allocate(equity + cash_usd, prices, fx)
+            # The dividend book is emptied into the rebalance: a year of
+            # reinvested income stops being a side pocket and becomes part of
+            # the index proper, redistributed at target weights like everything
+            # else. Its value has to be in the pot BEFORE allocating, or the
+            # shares it bought would simply vanish.
+            div_equity, div_cash_usd = dividend_book_value(prices, fx)
+            holdings, cash = _allocate(
+                equity + cash_usd + div_equity + div_cash_usd, prices, fx)
             db.save_index_state(holdings, cash)
+            db.clear_dividend_state()
+            if div_equity or div_cash_usd:
+                print(f"[dividends] {date}: rebalance absorbed "
+                      f"{div_equity + div_cash_usd:,.2f} USD of reinvested income")
             db.set_meta("last_rebalance_year", date[:4])
             rebalanced = True
 
@@ -152,6 +163,13 @@ def update(date, prices, fx):
             f"({', '.join(sorted(unpriced)[:8])}). Valuing them at zero would corrupt "
             f"the track record.")
 
+    # Shares bought with reinvested dividends are part of the fund's value, so
+    # they are part of NAV. Keeping them in a separate table is a bookkeeping
+    # choice about visibility, not a claim that they belong to someone else.
+    div_equity, div_cash_usd = dividend_book_value(prices, fx)
+    equity += div_equity
+    cash_usd += div_cash_usd
+
     nav_usd = equity + cash_usd
     nav_base = to_base(nav_usd, fx)
     nps = nav_base / u.SHARES_OUTSTANDING          # per share, in BASE_CCY
@@ -161,7 +179,8 @@ def update(date, prices, fx):
                   nav_base=nav_base, base_ccy=u.BASE_CCY)
     return {"date": date, "nav_usd": nav_usd, "nav_base": nav_base,
             "base_ccy": u.BASE_CCY, "nav_per_share": nps, "equity_usd": equity,
-            "cash_usd": cash_usd, "n_priced": n_priced, "rebalanced": rebalanced}
+            "cash_usd": cash_usd, "n_priced": n_priced, "rebalanced": rebalanced,
+            "dividend_equity_usd": div_equity, "dividend_cash_usd": div_cash_usd}
 
 
 def revalue(date, prices, fx, rebalanced, stale_tickers=()):
@@ -190,6 +209,12 @@ def revalue(date, prices, fx, rebalanced, stale_tickers=()):
             f"cannot revalue {date}: {len(unpriced)} held positions have no price "
             f"({', '.join(sorted(unpriced)[:8])})")
 
+    # Must mirror update(), or correcting a day would quietly write a NAV that
+    # excludes every dividend-bought share.
+    div_equity, div_cash_usd = dividend_book_value(prices, fx)
+    equity += div_equity
+    cash_usd += div_cash_usd
+
     nav_usd = equity + cash_usd
     nav_base = to_base(nav_usd, fx)
     nps = nav_base / u.SHARES_OUTSTANDING
@@ -202,6 +227,99 @@ def revalue(date, prices, fx, rebalanced, stale_tickers=()):
     return {"date": date, "nav_usd": nav_usd, "nav_base": nav_base,
             "nav_per_share": nps, "n_priced": n_priced,
             "stale_count": len(stale_tickers)}
+
+
+def apply_dividends(date, prices, fx, div_rows):
+    """
+    Credit dividends with an ex-date of `date` and reinvest them.
+
+    Three decisions worth stating, because each has a defensible alternative:
+
+    EX-DATE, NOT PAY-DATE. A share price gaps down by roughly the dividend on
+    the morning it goes ex. Crediting the cash only when it actually arrives
+    weeks later would show a real drop in NAV followed by an unexplained jump,
+    for something that cost the fund nothing. Accruing on the ex-date is what
+    total-return indices do, and it is the date Yahoo's dividend series is keyed
+    by, so the two line up.
+
+    BACK INTO THE SAME STOCK. This is a dividend REINVESTMENT plan, so KO's
+    dividend buys KO. The alternative — pooling everything and buying at target
+    weights — is really a rebalance, and this index rebalances once a year on
+    purpose.
+
+    WHOLE SHARES, REMAINDER CARRIED. The same rule the index itself follows. A
+    payment too small to buy a share is not lost; it waits in that constituent's
+    dividend cash and joins the next one, which is precisely what makes the
+    reinvestment compound.
+
+    Dividends are earned on the dividend shares as well as the main holdings —
+    that compounding is the whole point of keeping them.
+
+    Returns the events recorded. Idempotent: a re-fetch covering the same window
+    will not pay the same dividend twice, because `dividend_events` is keyed by
+    (date, ticker) and an already-recorded payment is skipped.
+    """
+    if not div_rows:
+        return []
+
+    main, _ = db.load_index_state()
+    div_shares, div_cash = db.load_dividend_state()
+    events = []
+
+    for row in sorted(div_rows, key=lambda r: r["ticker"]):
+        if row["date"] != date:
+            continue
+        t = row["ticker"]
+        meta = u.UNIVERSE.get(t)
+        if meta is None:
+            continue
+        held = int(main.get(t, 0)) + int(div_shares.get(t, 0))
+        if held <= 0:
+            continue
+        if db.dividend_paid_on(date, t):
+            continue
+
+        gross = held * float(row["per_share"])
+        pot = div_cash.get(t, 0.0) + gross
+        px = prices.get(t)
+        bought = 0
+        if px and px > 0:
+            bought = int(math.floor(pot / px))
+            pot -= bought * px
+        div_shares[t] = int(div_shares.get(t, 0)) + bought
+        div_cash[t] = pot
+
+        ev = {"date": date, "ticker": t, "per_share": float(row["per_share"]),
+              "ccy": meta["ccy"], "shares_held": held, "gross": gross,
+              "price": px, "shares_bought": bought, "cash_after": pot}
+        db.record_dividend(ev)
+        events.append(ev)
+
+    if events:
+        db.save_dividend_state(div_shares, div_cash)
+        total = sum(e["shares_bought"] for e in events)
+        print(f"[dividends] {date}: {len(events)} payment(s), "
+              f"{total} share(s) reinvested")
+    return events
+
+
+def dividend_book_value(prices, fx):
+    """(equity_usd, cash_usd) of the dividend-bought book, marked at `prices`."""
+    shares, cash = db.load_dividend_state()
+    equity = 0.0
+    for t, n in shares.items():
+        meta = u.UNIVERSE.get(t)
+        px = prices.get(t)
+        if not meta or not n or not px:
+            continue
+        equity += to_usd(px * n, meta["ccy"], fx)
+    held_cash = 0.0
+    for t, amount in cash.items():
+        meta = u.UNIVERSE.get(t)
+        if not meta or not amount:
+            continue
+        held_cash += to_usd(amount, meta["ccy"], fx)
+    return equity, held_cash
 
 
 def stats():

@@ -97,6 +97,38 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     PRIMARY KEY (quarter, ticker)
 );
 
+-- Shares bought with dividend money, kept apart from the main book so the
+-- contribution of reinvested income is visible rather than blended away. They
+-- earn dividends themselves, which is what makes the reinvestment compound.
+-- Emptied into the main holdings at each annual rebalance.
+CREATE TABLE IF NOT EXISTS dividend_holdings (
+    ticker TEXT PRIMARY KEY,
+    shares INTEGER NOT NULL
+);
+
+-- Dividend money not yet converted into whole shares, per constituent, in that
+-- constituent's own currency. A payment smaller than one share rolls forward to
+-- the next one rather than being lost.
+CREATE TABLE IF NOT EXISTS dividend_cash (
+    ticker TEXT PRIMARY KEY,
+    amount REAL NOT NULL
+);
+
+-- One row per dividend actually received: the record of where the reinvested
+-- shares came from.
+CREATE TABLE IF NOT EXISTS dividend_events (
+    date          TEXT NOT NULL,      -- ex-dividend date
+    ticker        TEXT NOT NULL,
+    per_share     REAL NOT NULL,      -- in the listing's local currency
+    ccy           TEXT NOT NULL,
+    shares_held   INTEGER NOT NULL,   -- main + dividend shares at the time
+    gross         REAL NOT NULL,      -- local currency
+    price         REAL,               -- close used to reinvest
+    shares_bought INTEGER NOT NULL,
+    cash_after    REAL NOT NULL,      -- remainder carried to the next payment
+    PRIMARY KEY (date, ticker)
+);
+
 -- user's own cash contributions, to track money-weighted context
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
@@ -510,6 +542,60 @@ def upsert_nav(date, nav_usd, nav_per_share, equity_usd, cash_usd, n_priced,
             (date, nav_usd, nav_per_share, equity_usd, cash_usd, n_priced,
              int(rebalanced), nav_base, base_ccy,
              int(stale_count or 0), tickers, revised_at))
+
+
+# ---------- dividends ----------
+def load_dividend_state():
+    """(shares_by_ticker, cash_by_ticker). Cash is in each listing's currency."""
+    with conn() as c:
+        h = {r["ticker"]: r["shares"] for r in c.execute(
+            "SELECT ticker, shares FROM dividend_holdings")}
+        k = {r["ticker"]: r["amount"] for r in c.execute(
+            "SELECT ticker, amount FROM dividend_cash")}
+        return h, k
+
+
+def save_dividend_state(holdings, cash):
+    with conn() as c:
+        c.execute("DELETE FROM dividend_holdings")
+        c.execute("DELETE FROM dividend_cash")
+        c.executemany("INSERT INTO dividend_holdings(ticker,shares) VALUES(?,?)",
+                      [(t, int(n)) for t, n in holdings.items() if n])
+        c.executemany("INSERT INTO dividend_cash(ticker,amount) VALUES(?,?)",
+                      [(t, float(a)) for t, a in cash.items() if a])
+
+
+def record_dividend(row):
+    """Idempotent by (date, ticker): a re-fetch of the same window must not pay twice."""
+    with conn() as c:
+        c.execute(
+            "INSERT INTO dividend_events(date,ticker,per_share,ccy,shares_held,gross,"
+            "price,shares_bought,cash_after) VALUES(?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(date,ticker) DO NOTHING",
+            (row["date"], row["ticker"], row["per_share"], row["ccy"],
+             row["shares_held"], row["gross"], row.get("price"),
+             row["shares_bought"], row["cash_after"]))
+
+
+def dividend_paid_on(date, ticker):
+    with conn() as c:
+        return c.execute("SELECT 1 FROM dividend_events WHERE date=? AND ticker=?",
+                         (date, ticker)).fetchone() is not None
+
+
+def dividend_events(limit=None):
+    q = "SELECT * FROM dividend_events ORDER BY date DESC, ticker"
+    if limit:
+        q += f" LIMIT {int(limit)}"
+    with conn() as c:
+        return [dict(r) for r in c.execute(q)]
+
+
+def clear_dividend_state():
+    """Fold the dividend book away — called when a rebalance absorbs it."""
+    with conn() as c:
+        c.execute("DELETE FROM dividend_holdings")
+        c.execute("DELETE FROM dividend_cash")
 
 
 def set_nav_staleness(date, stale_tickers):

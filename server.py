@@ -138,7 +138,7 @@ def run_daily_update(day_offset=0, window=1):
     leaving permanent holes in the track record.
     """
     with _fetch_lock:
-        valuation_date, price_rows, fx_rows = marketdata.fetch(
+        valuation_date, price_rows, fx_rows, div_rows = marketdata.fetch(
             day_offset=day_offset, window=window)
 
         # --- persist raw market data FIRST ---
@@ -189,11 +189,23 @@ def run_daily_update(day_offset=0, window=1):
 
             prices = {t: v["close"] for t, v in asof.items()}
             stale = [t for t, v in asof.items() if v["date"] < d]
+            # Credit any dividend going ex on this session BEFORE valuing it, so
+            # the shares it buys are marked at this session's close rather than
+            # appearing a day late.
+            try:
+                paid = index_engine.apply_dividends(d, prices, fx, div_rows)
+            except Exception as e:
+                # Income must never cost the day its NAV point.
+                print(f"[dividends] {d}: skipped ({type(e).__name__}: {e})")
+                paid = []
             try:
                 r = index_engine.update(d, prices, fx)
             except index_engine.StaleValuationError as e:
                 skipped.append({"date": d, "reason": str(e)})
                 continue
+            r["dividends"] = [{"ticker": e["ticker"], "gross": e["gross"],
+                               "ccy": e["ccy"], "shares_bought": e["shares_bought"]}
+                              for e in paid]
             r["stale_constituents"] = len(stale)
             r["stale_tickers"] = sorted(stale)[:10]
             # Persist which constituents were carried over, so a later fetch can
@@ -468,6 +480,95 @@ def api_status():
             "last_fetch_date": db.get_meta("last_fundamentals_fetch"),
             "up_to_date": db.get_meta("last_fundamentals_quarter") == marketdata.current_quarter(),
             "tickers_covered": len(db.latest_fundamentals()),
+        },
+    }
+
+
+@app.get("/api/dividends")
+def api_dividends():
+    """
+    The dividend book: shares bought with reinvested income, the cash not yet
+    converted into whole shares, and the payment history behind both.
+
+    Separate from /api/index_holdings on purpose. The main book answers "what
+    does the index own"; this one answers "how much of that came from income
+    rather than from the original ten billion", which is invisible once the two
+    are added together.
+    """
+    shares, cash = db.load_dividend_state()
+    asof = db.latest_price_date()
+    prices = db.prices_asof(asof) if asof else {}
+    fx = db.fx_asof(asof) if asof else {}
+
+    def to_base(amount_usd):
+        if amount_usd is None:
+            return None
+        try:
+            return index_engine.to_base(amount_usd, fx)
+        except ValueError:
+            return None
+
+    rows, equity_usd = [], 0.0
+    for t in sorted(set(shares) | set(cash)):
+        meta = u.UNIVERSE.get(t)
+        if meta is None:
+            continue
+        n = int(shares.get(t, 0))
+        quote = prices.get(t)
+        close = quote["close"] if quote else None
+        value_local = close * n if (close is not None and n) else None
+        value_usd = None
+        if value_local is not None:
+            try:
+                value_usd = index_engine.to_usd(value_local, meta["ccy"], fx)
+            except ValueError:
+                value_usd = None
+        if value_usd:
+            equity_usd += value_usd
+        rows.append({
+            "ticker": t, "name": meta["name"], "name_en": meta["name_en"],
+            "ccy": meta["ccy"], "shares": n, "price": close,
+            "price_date": quote["date"] if quote else None,
+            "value_local": value_local, "value_usd": value_usd,
+            "value_base": to_base(value_usd),
+            "pending_cash": cash.get(t, 0.0),
+        })
+
+    cash_usd = 0.0
+    for t, amount in cash.items():
+        meta = u.UNIVERSE.get(t)
+        if not meta or not amount:
+            continue
+        try:
+            cash_usd += index_engine.to_usd(amount, meta["ccy"], fx)
+        except ValueError:
+            pass
+
+    events = db.dividend_events()
+    for e in events:
+        meta = u.UNIVERSE.get(e["ticker"]) or {}
+        e["name"] = meta.get("name")
+        e["name_en"] = meta.get("name_en")
+        try:
+            e["gross_base"] = to_base(index_engine.to_usd(e["gross"], e["ccy"], fx))
+        except ValueError:
+            e["gross_base"] = None
+
+    nav = db.nav_history()
+    nav_usd = nav[-1]["nav_usd"] if nav else 0.0
+    return {
+        "as_of": asof,
+        "base_ccy": u.BASE_CCY,
+        "holdings": rows,
+        "events": events,
+        "totals": {
+            "equity_usd": equity_usd, "cash_usd": cash_usd,
+            "equity_base": to_base(equity_usd), "cash_base": to_base(cash_usd),
+            "total_base": to_base(equity_usd + cash_usd),
+            "share_of_nav": ((equity_usd + cash_usd) / nav_usd) if nav_usd else 0.0,
+            "n_positions": sum(1 for r in rows if r["shares"]),
+            "n_payments": len(events),
+            "gross_base_total": sum(e["gross_base"] or 0 for e in events),
         },
     }
 

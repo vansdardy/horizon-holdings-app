@@ -367,9 +367,9 @@ def _hide_from_fetch(monkeypatch, ticker):
     real = server.marketdata.fetch
 
     def patched(day_offset=0, window=1):
-        vd, prices, fx = real(day_offset=day_offset, window=window)
+        vd, prices, fx, divs = real(day_offset=day_offset, window=window)
         return vd, [r for r in prices
-                    if not (r["ticker"] == ticker and r["date"] == vd)], fx
+                    if not (r["ticker"] == ticker and r["date"] == vd)], fx, divs
 
     monkeypatch.setattr(server.marketdata, "fetch", patched)
 

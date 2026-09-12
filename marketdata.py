@@ -48,9 +48,13 @@ def fetch_live():
     def download(syms):
         if not syms:
             return None
+        # actions=True brings dividends back in the SAME request as the prices.
+        # They are indexed by EX-date, which is the date the index must accrue
+        # them on: the price gaps down that morning, so crediting only at the
+        # pay date weeks later would show a fake dip and then a fake jump.
         return yf.download(syms, period=LOOKBACK, interval="1d",
                            auto_adjust=False, progress=False, group_by="ticker",
-                           threads=True)
+                           actions=True, threads=True)
 
     def series(data, sym):
         if data is None:
@@ -64,10 +68,11 @@ def fetch_live():
     # ---- phase 1: primaries + FX ----
     data = download(list(primary.values()) + fx_syms)
 
-    resolved, price_rows = {}, []
+    resolved, price_rows, div_rows = {}, [], []
 
-    def take(t, sym, s):
+    def take(t, sym, s, src=None):
         resolved[t] = sym
+        _collect_dividends(t, sym, data if src is None else src, div_rows)
         # Normalise the quote unit to the listing's currency the moment the data
         # arrives, so that everything downstream — valuation, share counts, the
         # user's own positions — works in one unit. London quotes in pence; see
@@ -106,7 +111,7 @@ def fetch_live():
                     hit = (sym, s)
                     break
             if hit:
-                take(t, hit[0], hit[1])
+                take(t, hit[0], hit[1], alt_data)
                 print(f"[marketdata] {t}: primary {primary[t]} failed, using "
                       f"fallback {hit[0]} — consider updating universe.py")
             else:
@@ -147,7 +152,7 @@ def fetch_live():
 
     # NOT max(date): a market that is open right now already has a bar for today
     # holding its live price. See _last_complete_session.
-    valuation_date = _last_complete_session(price_rows, len(resolved))
+    valuation_date = _last_complete_session(price_rows, len(resolved), resolved)
     dropped = [r for r in price_rows if r["date"] > valuation_date]
     if dropped:
         ahead = sorted({r["date"] for r in dropped})
@@ -162,40 +167,91 @@ def fetch_live():
     price_rows, _unfilled = _fill_missing_with_quotes(
         price_rows, resolved, valuation_date)
 
-    return valuation_date, price_rows, fx_rows
+    # Only dividends inside the valued window matter; anything dated after the
+    # session being valued has not happened yet as far as this index is concerned.
+    div_rows = [r for r in div_rows if r["date"] <= valuation_date]
+
+    return valuation_date, price_rows, fx_rows, div_rows
 
 
-def _last_complete_session(price_rows, n_constituents):
+def _collect_dividends(ticker, symbol, data, out):
+    """Pull the Dividends column for one constituent out of the batch response."""
+    if data is None:
+        return
+    try:
+        series = data[symbol]["Dividends"].dropna()
+    except Exception:
+        return
+    div = u.price_divisor(ticker)     # London pays in pence too
+    for idx, val in series.items():
+        amount = float(val)
+        if amount <= 0:
+            continue
+        out.append({"ticker": ticker, "date": idx.date().isoformat(),
+                    "per_share": amount / div})
+
+
+def _session_has_ended(day, tickers, resolved):
     """
-    The newest session most of the index actually traded in.
+    Have the markets that DID trade on `day` actually finished that session?
 
-    `max(date)` is the obvious choice and it is wrong, because a market that is
-    open RIGHT NOW already has a bar for today carrying its live price. Fetch at
-    23:00 in New York and Tokyo is mid-morning: eight Japanese constituents come
-    back with a bar dated tomorrow holding an intraday number, while the other
-    seventy have not started that session at all. Valuing on that date produces
-    a NAV point for a day that has barely happened - eight live prices and
-    seventy closes carried over from the day before - and stores those intraday
-    numbers in the archive as though they were closes.
+    Asked of at most three of them, and only when `day` is too thin to be
+    obviously real. A quote knows about the latest session only, so this answers
+    "is the newest date in hand a completed session" — which is exactly the
+    question, since this runs at fetch time.
+    """
+    for t in tickers[:3]:
+        sym = resolved.get(t)
+        if sym and _quote_close(t, sym, day) is not None:
+            return True
+    return False
 
-    So walk back to the newest date a majority of the index has a bar for. A
-    genuinely global session has most of the world in it; a session only Tokyo
-    has reached does not, whatever the calendar says. Bars after that date are
-    dropped rather than stored, because a price taken mid-session is not a close
-    and the archive holds closes.
 
-    A fetch during New York's own trading hours is a milder version of the same
-    thing and is NOT caught by this - the scheduled run happens after that close,
-    which is what the 18:00 default is for.
+def _last_complete_session(price_rows, n_constituents, resolved=None, verify=True):
+    """
+    The newest session that has actually finished.
+
+    Two different things can make the newest date in the data unusable, and they
+    need telling apart — conflating them is what made this wrong the first time.
+
+    IN PROGRESS. A market open right now already has a bar for today holding its
+    live price. Fetch at 23:00 in New York and Tokyo is mid-morning: eight
+    Japanese constituents return a bar dated tomorrow with an intraday number in
+    it. Valuing that produces a NAV point for a day that has barely happened.
+
+    THIN BUT REAL. On a holiday most of the world observes, only a couple of
+    markets trade — 2026-09-07 had 19 of 78, London and Tokyo. Those 19 are
+    genuine closes. Valuing the session with the other 59 carried forward is
+    ordinary index practice, and it is what this application already does for
+    every single-market holiday.
+
+    A headcount alone cannot separate them: both look like "hardly anybody
+    traded". So a clear majority is accepted immediately as obviously real, and
+    anything thinner is checked against the quote service — if the markets that
+    did trade have closed for that day, the session is real and gets valued.
+
+    Getting this wrong cost a day of NAV: v1.12.1 rejected 2026-09-07 outright,
+    so nothing appeared that evening and the point was backfilled a day late.
     """
     if not price_rows:
         return None
     per_date = {}
     for r in price_rows:
         per_date.setdefault(r["date"], set()).add(r["ticker"])
-    # A majority, and never fewer than two, so a tiny universe still works.
+
+    dates = sorted(per_date, reverse=True)
     need = max(2, (n_constituents or len(per_date)) // 2)
-    for d in sorted(per_date, reverse=True):
+
+    newest = dates[0]
+    if len(per_date[newest]) >= need:
+        return newest
+    if verify and resolved and _session_has_ended(newest, sorted(per_date[newest]), resolved):
+        print(f"[marketdata] {newest}: only {len(per_date[newest])} of "
+              f"{n_constituents} traded, but their session has closed — a thin "
+              f"session (holiday elsewhere), valuing it")
+        return newest
+
+    for d in dates[1:]:
         if len(per_date[d]) >= need:
             return d
     return max(per_date)
@@ -329,7 +385,10 @@ def fetch_mock(day_offset=0, window=1):
                             "date": date})
 
     valuation_date = max(r["date"] for r in price_rows)
-    return valuation_date, price_rows, fx_rows
+    # No mock dividends on purpose. Inventing them would put fabricated income
+    # into every mock NAV series and make the mock curve quietly untrue to its
+    # own rules; tests that need a dividend supply it explicitly instead.
+    return valuation_date, price_rows, fx_rows, []
 
 
 def fetch(day_offset=0, window=1):

@@ -203,3 +203,99 @@ def test_simulate_touches_no_stored_state(db, fx, prices):
     assert len(series) == 2
     assert series[0]["nav_per_share"] == pytest.approx(50.0, rel=1e-9)
     assert db.nav_history() == before, "simulation must not write anything"
+
+
+# ------------------------------------------------------------------ dividends
+# Reinvested income is kept in its own book so its contribution stays visible,
+# it compounds because the shares it buys earn dividends themselves, and the
+# annual rebalance absorbs it.
+
+def _div(ticker, date, per_share):
+    return [{"ticker": ticker, "date": date, "per_share": per_share}]
+
+
+def test_a_dividend_buys_shares_of_the_same_stock(db, fx, prices):
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)          # seed
+    held = db.load_index_state()[0]["KO"]
+    assert held > 0
+
+    # Every constituent is priced at 10.0 by the fixture; pay 1.0 a share.
+    events = ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))
+
+    assert len(events) == 1
+    e = events[0]
+    assert e["shares_held"] == held
+    assert e["gross"] == pytest.approx(held * 1.0)
+    assert e["shares_bought"] == int(held * 1.0 // 10.0), "whole shares at the close"
+
+    shares, cash = db.load_dividend_state()
+    assert shares["KO"] == e["shares_bought"]
+    assert 0 <= cash["KO"] < 10.0, "the remainder waits for the next payment"
+
+
+def test_dividend_shares_earn_dividends_too(db, fx, prices):
+    """The compounding the separate book exists to make visible."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    main = db.load_index_state()[0]["KO"]
+
+    first = ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))[0]
+    bought = first["shares_bought"]
+    assert bought > 0
+
+    second = ie.apply_dividends("2026-09-02", prices, fx, _div("KO", "2026-09-02", 1.0))[0]
+    assert second["shares_held"] == main + bought, (
+        "the second payment must be paid on the shares the first one bought")
+
+
+def test_the_same_dividend_is_never_paid_twice(db, fx, prices):
+    """A ten-day fetch window sees the same ex-date on many consecutive days."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    rows = _div("KO", "2026-06-02", 1.0)
+
+    first = ie.apply_dividends("2026-06-02", prices, fx, rows)
+    again = ie.apply_dividends("2026-06-02", prices, fx, rows)
+
+    assert len(first) == 1 and again == []
+    assert db.load_dividend_state()[0]["KO"] == first[0]["shares_bought"]
+
+
+def test_dividend_shares_count_towards_nav(db, fx, prices):
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    before = [h for h in db.nav_history() if h["date"] == "2026-06-01"][0]["nav_usd"]
+
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))
+    r = ie.update("2026-06-02", prices, fx)
+
+    assert r["dividend_equity_usd"] > 0
+    assert r["nav_usd"] > before, "income received must raise NAV, not vanish"
+
+
+def test_the_rebalance_absorbs_the_dividend_book(db, fx, prices):
+    """As requested: the dividend portfolio is emptied at the rebalance and its
+    shares go back into the pot with everything else."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-06-02", prices, fx, _div("KO", "2026-06-02", 1.0))
+    assert db.load_dividend_state()[0].get("KO", 0) > 0
+
+    before = ie.update("2026-06-02", prices, fx)["nav_usd"]
+
+    r = ie.update("2027-01-04", prices, fx)      # first session of a new year
+    assert r["rebalanced"] is True
+
+    shares, cash = db.load_dividend_state()
+    assert shares == {} and cash == {}, "the dividend book is emptied"
+    assert r["dividend_equity_usd"] == 0
+
+    assert r["nav_usd"] == pytest.approx(before, rel=1e-6), (
+        "absorbing the book must move the shares, not the value — anything else "
+        "means a year of reinvested income was dropped on the floor")

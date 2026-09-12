@@ -646,6 +646,51 @@ python server.py            # → http://127.0.0.1:8000</pre>
         </div>
         <div style="font-family:var(--mono);font-size:10.5px;color:var(--text-faint);margin-top:10px;"
              data-i18n="hold.rounding"></div>
+
+        <!-- The dividend book. Kept beside the main holdings rather than inside
+             them, because the whole point is to be able to see how much of the
+             fund came from income rather than from the original capital. -->
+        <div id="divBlock" style="margin-top:34px;">
+          <h3 style="font-family:var(--serif);font-size:19px;font-weight:600;margin-bottom:6px;"
+              data-i18n="div.title">Reinvested dividends</h3>
+          <div class="section-desc" data-i18n-html="div.desc"></div>
+          <div id="divKpis" class="kpi-row" style="margin-bottom:16px;"></div>
+          <div id="divEmpty" class="status-msg" style="display:none;" data-i18n="div.empty"></div>
+          <div id="divTables">
+            <div class="table-wrap" style="max-height:none;">
+              <table class="hold-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="th.ticker">Ticker</th>
+                    <th data-i18n="th.company">Company</th>
+                    <th class="num" data-i18n="div.thShares">Shares from income</th>
+                    <th class="num"><span data-i18n="hold.thPrice">Price</span><div style="font-weight:400;opacity:.6" data-i18n="posTh.local">local</div></th>
+                    <th class="num"><span data-i18n="hold.thValue">Market value</span><div style="font-weight:400;opacity:.6" id="divCcyHdr">—</div></th>
+                    <th class="num" data-i18n="div.thPending">Awaiting reinvestment</th>
+                  </tr>
+                </thead>
+                <tbody id="divBody"></tbody>
+              </table>
+            </div>
+            <h3 style="font-family:var(--serif);font-size:17px;font-weight:600;margin:26px 0 8px;"
+                data-i18n="div.historyTitle">Dividend history</h3>
+            <div class="table-wrap">
+              <table class="hold-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="div.thExDate">Ex-date</th>
+                    <th data-i18n="th.company">Company</th>
+                    <th class="num" data-i18n="div.thPerShare">Per share</th>
+                    <th class="num" data-i18n="div.thHeld">Shares held</th>
+                    <th class="num" data-i18n="div.thGross">Gross</th>
+                    <th class="num" data-i18n="div.thBought">Shares bought</th>
+                  </tr>
+                </thead>
+                <tbody id="divHistBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -1411,6 +1456,59 @@ function renderHoldings(){
     </tr>`).join('');
 }
 
+/* ---------------- reinvested dividends ---------------- */
+let DIV = null;
+
+async function loadDividends(){
+  try{ DIV = await api('/api/dividends'); }catch(e){ DIV = null; }
+  renderDividends();
+}
+
+function renderDividends(){
+  const block = $('divBlock');
+  if(!block || !DIV) return;
+
+  const IB = DIV.base_ccy || 'CHF';
+  const isym = (CCY_SYMBOL[IB] || IB + ' ');
+  const T = DIV.totals;
+  const hdr = $('divCcyHdr'); if(hdr) hdr.textContent = '(' + IB + ')';
+
+  const empty = !T.n_payments;
+  $('divEmpty').style.display = empty ? '' : 'none';
+  $('divTables').style.display = empty ? 'none' : '';
+  $('divKpis').style.display = empty ? 'none' : '';
+  if(empty) return;
+
+  $('divKpis').innerHTML = [
+    [t('div.value'), isym + money(T.total_base, IB), t('div.valueSub', {v: fmtPct(T.share_of_nav, 4)})],
+    [t('div.received'), isym + money(T.gross_base_total, IB), t('div.receivedSub', {n: T.n_payments})],
+    [t('div.positions'), String(T.n_positions), t('div.positionsSub')],
+  ].map(([l,v,sub]) =>
+    `<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${sub}</div></div>`).join('');
+
+  const rows = DIV.holdings.filter(h => h.shares || h.pending_cash)
+                           .sort((a,b) => (b.value_base||0) - (a.value_base||0));
+  $('divBody').innerHTML = rows.map(h => `
+    <tr>
+      <td class="tk">${h.ticker}</td>
+      <td>${LANG === 'zh' ? h.name : (h.name_en || h.name)}</td>
+      <td class="num">${h.shares.toLocaleString()}</td>
+      <td class="num">${h.price == null ? '—' : money(h.price, h.ccy)}${staleTag(h.price_date)}</td>
+      <td class="num">${h.value_base == null ? '—' : money(h.value_base, IB)}</td>
+      <td class="num" style="color:var(--text-dim)">${h.pending_cash ? money(h.pending_cash, h.ccy) + ' ' + h.ccy : '—'}</td>
+    </tr>`).join('');
+
+  $('divHistBody').innerHTML = DIV.events.map(e => `
+    <tr>
+      <td class="tk">${e.date}</td>
+      <td>${LANG === 'zh' ? (e.name || e.ticker) : (e.name_en || e.name || e.ticker)}</td>
+      <td class="num">${money(e.per_share, e.ccy)} ${e.ccy}</td>
+      <td class="num">${e.shares_held.toLocaleString()}</td>
+      <td class="num">${money(e.gross, e.ccy)} ${e.ccy}</td>
+      <td class="num" style="color:var(--gold)">${e.shares_bought.toLocaleString()}</td>
+    </tr>`).join('');
+}
+
 /* ---------------- staying current ---------------- */
 // This window can be open for weeks — that is the entire point of the tray —
 // while the backend fetches once a day after the close. Nothing here used to
@@ -1442,6 +1540,7 @@ async function pollForFreshData(){
     await loadStatus();
     await loadNav();
     await loadHoldings();
+    await loadDividends();
     await loadPositions();
     await loadTickerPrices();
     await loadFundamentals();
@@ -1897,6 +1996,7 @@ function setLang(lang){
   [rebuildEffectiveData, renderKPIs, renderValueMap, applyFiltersAndRender,
    renderTicker, renderNav, renderPosTable, renderCash, renderPosKpis,
    renderSectorChart, renderCountryChart, renderSectorDrift, renderHoldings,
+   renderDividends,
    loadStatus].forEach(fn => {
     try { if(typeof fn === 'function') fn(); } catch(e){ /* not loaded yet */ }
   });
@@ -1971,7 +2071,7 @@ async function boot(){
   }
 
   const s = await loadStatus();
-  if(s){ await loadNav(); await loadHoldings(); await loadPositions(); await loadTickerPrices(); }
+  if(s){ await loadNav(); await loadHoldings(); await loadDividends(); await loadPositions(); await loadTickerPrices(); }
   await loadFundamentals();
 
   // Watch for the daily fetch landing while this window sits open.

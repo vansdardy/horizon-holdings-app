@@ -256,3 +256,49 @@ def test_a_session_missing_only_europe_is_still_valued():
     europe = [f"E{i}" for i in range(28)]
     rows = _rows({"2026-08-19": rest + europe, "2026-08-20": rest})
     assert marketdata._last_complete_session(rows, 78) == "2026-08-20"
+
+
+def test_a_thin_but_finished_session_is_valued(monkeypatch):
+    """2026-09-07: only London and Tokyo traded, 19 of 78. Those are genuine
+    closes, and valuing the day with the rest carried forward is what this app
+    does for every holiday. Rejecting it cost a day of NAV — the point appeared
+    only when the next evening's fetch backfilled it."""
+    import marketdata
+
+    traded = [f"L{i}.L" for i in range(8)] + [f"T{i}.T" for i in range(11)]
+    everyone = traded + [f"X{i}" for i in range(59)]
+    rows = _rows({"2026-09-04": everyone, "2026-09-07": traded})
+    resolved = {t: t for t in everyone}
+
+    # Their session has closed, so the quote can confirm the day is real.
+    monkeypatch.setattr(marketdata, "_quote_close",
+                        lambda t, sym, day: 10.0 if day == "2026-09-07" else None)
+    assert marketdata._last_complete_session(rows, 78, resolved) == "2026-09-07"
+
+
+def test_a_thin_session_still_open_is_not_valued(monkeypatch):
+    """The other side of the same coin: Tokyo mid-morning while New York sleeps.
+    The quote refuses to call it a close, so the day is not valued."""
+    import marketdata
+
+    japan = [f"T{i}.T" for i in range(8)]
+    everyone = japan + [f"X{i}" for i in range(70)]
+    rows = _rows({"2026-08-20": everyone, "2026-08-21": japan})
+    resolved = {t: t for t in everyone}
+
+    monkeypatch.setattr(marketdata, "_quote_close", lambda t, sym, day: None)
+    assert marketdata._last_complete_session(rows, 78, resolved) == "2026-08-20"
+
+
+def test_a_clear_majority_is_accepted_without_asking_the_quote_service(monkeypatch):
+    """An obviously real session must not spend requests proving it."""
+    import marketdata
+
+    asked = []
+    monkeypatch.setattr(marketdata, "_quote_close",
+                        lambda t, sym, day: asked.append(day))
+    rest = [f"X{i}" for i in range(50)]
+    europe = [f"E{i}" for i in range(28)]
+    rows = _rows({"2026-08-19": rest + europe, "2026-08-20": rest})
+    assert marketdata._last_complete_session(rows, 78, {t: t for t in rest + europe}) == "2026-08-20"
+    assert asked == [], "a majority session is self-evident; no quote needed"

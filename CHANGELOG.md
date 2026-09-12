@@ -9,6 +9,62 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.13.0
+
+**Added**
+
+- **Dividends are reinvested, into their own book.** The index now receives the
+  dividends its constituents pay and buys more shares with them. Those shares
+  are kept in a separate dividend book rather than mixed into the main
+  holdings, so how much of the fund came from income stays visible instead of
+  being blended away. A new section under the index holdings shows the
+  income-bought positions, the cash still waiting to be invested, and the full
+  payment history.
+
+  Four rules, each with a defensible alternative that was rejected:
+
+  - **Credited on the ex-dividend date**, not the pay date. The share price gaps
+    down by roughly the payment that morning; waiting weeks for the cash to
+    arrive would show a real drop in NAV followed by an unexplained jump, for
+    something that cost the fund nothing. Total-return indices accrue on the
+    ex-date, and it is the date the data is keyed by.
+  - **Back into the company that paid it.** This is a reinvestment plan, so
+    Coca-Cola's dividend buys Coca-Cola. Pooling everything and buying at target
+    weights would be a rebalance, and this index rebalances once a year on
+    purpose.
+  - **Whole shares, remainder carried forward** — the same rule the index
+    itself follows. A payment too small to buy a share waits for the next one,
+    which is exactly what makes the reinvestment compound.
+  - **The dividend shares earn dividends themselves**, which is the compounding
+    the separate book exists to make visible.
+
+  At the **annual rebalance the whole book is absorbed**: its shares and cash go
+  into the pot and are redistributed at target weights with everything else,
+  then the book starts again from empty. Verified by test that this moves the
+  shares without moving NAV — a year of reinvested income must not be dropped on
+  the floor.
+
+  Your own positions are untouched. This applies to the model index only.
+
+  Dividends ride along in the same batched download as the prices, so this costs
+  no extra requests.
+
+**Fixed**
+
+- **A NAV point could be a day late when most of the world was on holiday.** On
+  2026-09-07 only London and Tokyo traded — 19 of 78 — and the majority rule
+  added in v1.12.1 rejected the session outright, so nothing appeared that
+  evening and the point was backfilled the next day.
+
+  That rule exists to stop a late-night fetch valuing a session Tokyo has barely
+  started, and a headcount alone cannot tell that apart from a thin but genuine
+  holiday session. A clear majority is now accepted immediately as obviously
+  real; anything thinner is checked against the quote service, and if the
+  markets that did trade have closed for the day, the session is valued. So a
+  holiday is valued on the day, and an in-progress session still is not.
+
+---
+
 ## v1.12.1
 
 **Fixed**
