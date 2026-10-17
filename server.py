@@ -864,7 +864,14 @@ def api_dividends():
     cash_usd = remainder_usd + awaiting_usd
 
     events = db.dividend_events()
+    rebalances = db.rebalance_dates()
     for e in events:
+        # A payment never paid by the time of the next rebalance is not lost:
+        # its cash went into that rebalance with the rest of the book. Saying so
+        # keeps the history from showing it as "awaiting" forever.
+        if not e["settled_date"]:
+            booked = e.get("book_date") or e["date"]
+            e["absorbed_on"] = next((r for r in rebalances if r >= booked), None)
         meta = u.UNIVERSE.get(e["ticker"]) or {}
         e["name"] = meta.get("name")
         e["name_en"] = meta.get("name_en")
@@ -1388,9 +1395,19 @@ def api_backup(dest: str = None):
     """
     # Deliberately not HERE: when frozen that is the read-only bundle. Backups
     # land next to the database, which is writable by definition.
-    dest = dest or os.path.join(
-        os.path.dirname(db.DB_PATH) or ".",
-        f"portfolio_backup_{dt.date.today().isoformat()}.db")
+    #
+    # Named to the second, never just the date. A date-only name meant a second
+    # backup on the same day silently replaced the first — which on 2026-10-17
+    # destroyed the only snapshot taken before a repair, an hour after it was
+    # made. A backup that can be overwritten by the next backup is not one.
+    if not dest:
+        folder = os.path.dirname(db.DB_PATH) or "."
+        stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        dest = os.path.join(folder, f"portfolio_backup_{stamp}.db")
+        n = 2
+        while os.path.exists(dest):
+            dest = os.path.join(folder, f"portfolio_backup_{stamp}_{n}.db")
+            n += 1
     try:
         db.backup_to(dest)
         return {"ok": True, "path": dest, "bytes": os.path.getsize(dest)}

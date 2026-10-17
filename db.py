@@ -724,6 +724,12 @@ def earliest_dividend_date():
 
 
 # ---------- what the archive says about individual sessions ----------
+def rebalance_dates():
+    with conn() as c:
+        return [r[0] for r in c.execute(
+            "SELECT date FROM nav_history WHERE rebalanced=1 ORDER BY date")]
+
+
 def last_rebalance_on_or_before(date):
     """The latest session at or before `date` that rebalanced (or seeded) the index."""
     with conn() as c:

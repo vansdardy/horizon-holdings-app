@@ -1363,21 +1363,66 @@ function renderNav(){
     }
 
     if(navChart) navChart.destroy();
+    // Every session is a dot, drawn as a ring in the line's colour so it reads
+    // against both the line and the fill. Dots used to be switched off past 40
+    // points — the series crossed that in October and they vanished. Past a few
+    // hundred sessions they would only smear the line, so they thin out and the
+    // crosshair takes over.
+    //
+    // Hovering never needs aiming: anywhere above a date snaps to that session
+    // (index mode, no intersect), which a dashed crosshair marks.
+    const lineCol = usingSim ? '#4FA89B' : '#C9A24B';
+    const dotR = hist.length <= 90 ? 3 : hist.length <= 250 ? 2 : 0;
     navChart = new Chart($('navChart'), {
       type:'line',
       data:{ labels: hist.map(h=>h.date), datasets:[{
         data: hist.map(h=>h.nav_per_share),
-        borderColor: usingSim ? '#4FA89B' : '#C9A24B',
+        borderColor: lineCol,
         backgroundColor: usingSim ? 'rgba(79,168,155,0.10)' : 'rgba(201,162,75,0.10)',
-        borderWidth:1.8, fill:true,
-        pointRadius: hist.length < 40 ? 2 : 0, tension:0.1 }]},
-      options:{ responsive:true, plugins:{legend:{display:false},
-        tooltip:{callbacks:{label:c=>' '+isym+c.parsed.y.toFixed(4)}}},
+        borderWidth:1.8, fill:true, tension:0.1,
+        pointRadius: dotR, pointBorderWidth: 1.5,
+        pointBackgroundColor: '#151C26', pointBorderColor: lineCol,
+        pointHoverRadius: 6, pointHoverBorderWidth: 2,
+        pointHoverBackgroundColor: lineCol, pointHoverBorderColor: '#0B0F14',
+        pointHitRadius: 10 }]},
+      options:{ responsive:true,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{legend:{display:false},
+          tooltip:{ displayColors:false, callbacks:{
+            label: c => ' ' + isym + c.parsed.y.toFixed(4),
+            // What the point is made of, when it is not simply a full set of
+            // that day's closes.
+            afterLabel: c => {
+              const h = hist[c.dataIndex] || {};
+              const out = [];
+              if((h.closed_tickers || []).length) out.push(t('nav.tipClosed', {n: h.closed_tickers.length}));
+              if(h.pending_count) out.push(t('nav.tipPending', {n: h.pending_count}));
+              if(h.revised_at) out.push(t('nav.tipRevised', {d: h.revised_at.slice(0, 10)}));
+              return out;
+            }}}},
         scales:{ x:{grid:{display:false}, ticks:{maxTicksLimit:12, font:{size:10}}},
-                 y:{grid:{color:'#1B222C'}, ticks:{callback:v=>isym+Number(v).toFixed(2)}}}}
+                 y:{grid:{color:'#1B222C'}, ticks:{callback:v=>isym+Number(v).toFixed(2)}}}},
+      plugins:[NAV_CROSSHAIR]
     });
   }catch(e){ $('navResults').style.display='none'; }
 }
+
+// A dashed vertical line at the session the tooltip is showing.
+const NAV_CROSSHAIR = {
+  id: 'navCrosshair',
+  afterDatasetsDraw: function(chart){
+    const active = chart.tooltip && chart.tooltip.getActiveElements
+      ? chart.tooltip.getActiveElements() : [];
+    if(!active.length) return;
+    const x = active[0].element.x, area = chart.chartArea, ctx = chart.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(201,162,75,0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
+    ctx.restore();
+  }
+};
 
 /* ---------------- the index's own book ---------------- */
 // Loaded once and kept, so a language switch re-renders from the same numbers
@@ -1522,7 +1567,9 @@ function renderDividends(){
     // known pay date, or waiting on a pay date that will never be published.
     const bought = e.settled_date
       ? `<span style="color:var(--gold)">${e.shares_bought.toLocaleString()}</span>`
-      : dim(t(e.pay_date ? 'div.unpaid' : 'div.noPayDate'));
+      : e.absorbed_on
+        ? dim(t('div.absorbed', {d: e.absorbed_on}))
+        : dim(t(e.pay_date ? 'div.unpaid' : 'div.noPayDate'));
     return `
     <tr>
       <td class="tk">${e.date}</td>

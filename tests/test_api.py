@@ -609,3 +609,26 @@ def test_an_ordinary_revision_of_a_close_is_not_a_split(client, monkeypatch):
     assert "splits_applied" not in out
     assert db_module.load_index_state()[0]["AAPL"] == held
 
+
+def test_two_backups_on_one_day_do_not_overwrite_each_other(client):
+    first = client.post("/api/backup").json()["path"]
+    second = client.post("/api/backup").json()["path"]
+    assert first != second
+    import os
+    assert os.path.exists(first) and os.path.exists(second)
+
+
+def test_a_payment_the_rebalance_absorbed_says_so(client):
+    import index_engine as ie
+
+    fx = {c: 1.0 for c in u.CURRENCIES if c != u.NUMERAIRE}
+    prices = {t: 10.0 for t in u.UNIVERSE}
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-12-28", prices, fx,
+                       [{"ticker": "KO", "date": "2026-12-28", "per_share": 1.0}],
+                       {("KO", "2026-12-28"): None})
+    ie.update("2027-01-04", prices, fx)
+
+    ev = [e for e in client.get("/api/dividends").json()["events"] if e["ticker"] == "KO"][0]
+    assert ev["absorbed_on"] == "2027-01-04"
+

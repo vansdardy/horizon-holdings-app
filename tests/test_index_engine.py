@@ -658,3 +658,23 @@ def test_a_fractional_split_keeps_the_exact_share_count(db, fx, prices):
     db.apply_split("KO", 1.5, "2026-07-01")
     assert db.load_index_state()[0]["KO"] == 4.5
 
+
+def test_a_payment_due_after_the_rebalance_goes_into_it_as_cash(db, fx, prices):
+    """Ex in December, paid in January: the rebalance takes the cash, and the
+    later pay date must not then buy shares for a book that no longer exists."""
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    held = db.load_index_state()[0]["KO"]
+    ie.apply_dividends("2026-12-28", prices, fx, _div("KO", "2026-12-28", 1.0),
+                       _pay("KO", "2026-12-28", "2027-01-15"))
+    before = ie.update("2026-12-28", prices, fx)["nav_usd"]
+    assert ie.update("2027-01-04", prices, fx)["nav_usd"] == pytest.approx(before)
+
+    _archive(db, "2027-01-15")
+    assert ie.apply_dividends("2027-01-15", prices, fx, [], None)["settled"] == []
+    assert db.load_dividend_state()[0] == {}
+    assert ie.update("2027-01-15", prices, fx)["nav_usd"] == pytest.approx(before), (
+        "the January payment was already in the rebalance; counting it again would "
+        f"add {held:,} x 1.0")
+

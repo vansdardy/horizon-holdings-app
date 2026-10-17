@@ -9,6 +9,31 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.15.1
+
+**Changed**
+
+- **Every session on the NAV chart is a visible dot, and hovering needs no
+  aim.** Dots were switched off once the series passed 40 sessions, which it
+  did in October, and the tooltip only appeared with the cursor exactly on a
+  point. Each session is now a ring on the line; anywhere above a date snaps to
+  that session, marked by a dashed crosshair. On very long histories the dots
+  thin out and the crosshair carries the job. The tooltip also says what a
+  point is made of when it is not a plain set of that day's closes: holdings on
+  a market closed for a holiday, closes still to arrive, and when the point was
+  revised.
+- **A dividend absorbed by the annual rebalance says so** in the history,
+  instead of showing as awaiting its pay date forever. Its cash went into the
+  rebalance with the rest of the dividend book; nothing was lost.
+
+**Fixed**
+
+- **A second backup on the same day overwrote the first.** Backups were named
+  by date alone. They are now named to the second, and never replace an
+  existing file.
+
+---
+
 ## v1.15.0
 
 **Fixed**
