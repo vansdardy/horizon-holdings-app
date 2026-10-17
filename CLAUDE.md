@@ -236,6 +236,23 @@ in-place. Preserve them:
   into `skipped_sessions` with a reason rather than aborting the run.
 - **First-ever run seeds at the newest session only**, not the oldest bar in the window — FX and
   equity series don't start on the same day, and pre-inception backfill is meaningless.
+- **Everything is in the current share basis.** A split multiplies index share counts by the
+  ratio and divides that constituent's archived closes by it (`db.apply_split`, one transaction),
+  so any past session re-marks to the same value. Detection is `server._apply_splits`, comparing
+  Yahoo's re-sent history with the archive; it must run *before* the fetch is persisted. Tokyo
+  splits are adjusted by Yahoo a session before the split record appears — the 2026-09-29
+  8035.T/8766.T splits went unhandled for three weeks and understated NAV by 2.2%.
+- **Past sessions are valued against the dividend book *as of that date*.** `dividend_book_asof`
+  rebuilds it from `dividend_events`; the running totals (`dividend_holdings`/`dividend_cash`/
+  `dividend_pending`) describe only now, and reading them for a backfill or revision credits a
+  past day with later income. The two must agree exactly for today — tests assert it.
+- **`nav_history.rebalanced` marks where the dividend ledger restarts**, so it must never be
+  cleared: `upsert_nav` keeps a set flag (`MAX`). A same-day re-run of `update()` used to erase it,
+  including the seed's.
+- **Dividends are accrued independently of NAV backfill.** Yahoo publishes some days late; any
+  unrecorded payment in the window is booked on the shares held going into its ex-date, and the
+  affected NAV points are restated (`restate_series`). KO, UNH, AMT and NTR.TO were lost in
+  September 2026 when accrual only happened while computing a session's own NAV.
 
 ### State lives in `meta`
 

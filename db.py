@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """SQLite persistence. Single file DB, no external services required."""
+import json
 import sqlite3
 import os
 import datetime as _dt
@@ -147,7 +148,26 @@ CREATE TABLE IF NOT EXISTS dividend_events (
     cash_after    REAL NOT NULL,      -- remainder carried to the next payment
     pay_date      TEXT,               -- NULL when the listing does not publish one
     settled_date  TEXT,               -- session the cash actually bought shares
+    book_date     TEXT,               -- first session whose NAV carries this cash
+    basis_seq     INTEGER,            -- splits.seq in force when the shares were bought
     PRIMARY KEY (date, ticker)
+);
+
+-- Stock splits the index has applied. Every share count and every archived
+-- close is kept in the CURRENT share basis, the way Yahoo serves prices: on a
+-- split the index multiplies its shares by `ratio` and divides that
+-- constituent's archived closes by it, so the value at every past date is
+-- unchanged and any session can be re-marked from the archive as it stands.
+-- `seq` orders the splits; a dividend purchase records the seq in force when it
+-- was made, which says which later splits its share count has to pass through.
+CREATE TABLE IF NOT EXISTS splits (
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker         TEXT NOT NULL,
+    ratio          REAL NOT NULL,     -- new shares per old share
+    effective_date TEXT,              -- first session on the new basis, once Yahoo shows it
+    detected_after TEXT,              -- newest bar in the fetch that noticed the change
+    applied_at     TEXT NOT NULL,
+    bars_rescaled  INTEGER NOT NULL DEFAULT 0
 );
 
 -- user's own cash contributions, to track money-weighted context
@@ -209,6 +229,28 @@ def init():
             # those payments as still awaiting cash that arrived long ago.
             c.execute("UPDATE dividend_events SET settled_date=date "
                       "WHERE settled_date IS NULL AND shares_bought > 0")
+        # book_date separates "when the money became the fund's" from the
+        # ex-date. They are the same except for a dividend recorded only after
+        # a rebalance it should have preceded; see index_engine.accrue_dividends.
+        dcols = {r["name"] for r in c.execute("PRAGMA table_info(dividend_events)")}
+        if dcols and "book_date" not in dcols:
+            c.execute("ALTER TABLE dividend_events ADD COLUMN book_date TEXT")
+        if dcols:
+            c.execute("UPDATE dividend_events SET book_date=date WHERE book_date IS NULL")
+        if dcols and "basis_seq" not in dcols:
+            c.execute("ALTER TABLE dividend_events ADD COLUMN basis_seq INTEGER")
+        # The seed is an allocation and is flagged as one, but a second fetch on
+        # inception day used to rewrite the row with the flag cleared - every
+        # same-day re-run of update() did. The flag now marks where the dividend
+        # ledger restarts, so it has to be right; restore it where it was lost.
+        c.execute("UPDATE nav_history SET rebalanced=1 WHERE date=(SELECT value "
+                  "FROM meta WHERE key='inception_date') AND rebalanced=0")
+        # When reinvestment began on this database, so a reconciliation knows
+        # how far back "missed" can mean. The earliest payment on record where
+        # there is one; otherwise today, since nothing earlier was ever owed.
+        if c.execute("SELECT 1 FROM meta WHERE key='dividends_since'").fetchone() is None:
+            first = c.execute("SELECT MIN(date) FROM dividend_events").fetchone()[0]
+            _set_meta(c, "dividends_since", first or _dt.date.today().isoformat())
     _migrate_renamed_tickers()
     _migrate_pence_quotes()
 
@@ -535,7 +577,7 @@ def save_index_state(holdings, cash):
         c.execute("DELETE FROM index_holdings")
         c.execute("DELETE FROM index_cash")
         c.executemany("INSERT INTO index_holdings(ticker,shares) VALUES(?,?)",
-                      [(t, int(n)) for t, n in holdings.items()])
+                      [(t, shares_value(n)) for t, n in holdings.items()])
         c.executemany("INSERT INTO index_cash(ccy,amount) VALUES(?,?)",
                       [(k, float(v)) for k, v in cash.items()])
 
@@ -568,7 +610,8 @@ def upsert_nav(date, nav_usd, nav_per_share, equity_usd, cash_usd, n_priced,
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(date) DO UPDATE SET "
             "nav_usd=excluded.nav_usd, nav_per_share=excluded.nav_per_share, "
             "equity_usd=excluded.equity_usd, cash_usd=excluded.cash_usd, "
-            "n_priced=excluded.n_priced, rebalanced=excluded.rebalanced, "
+            "n_priced=excluded.n_priced, "
+            "rebalanced=MAX(nav_history.rebalanced, excluded.rebalanced), "
             "nav_base=excluded.nav_base, base_ccy=excluded.base_ccy, "
             "stale_count=excluded.stale_count, stale_tickers=excluded.stale_tickers, "
             "revised_at=excluded.revised_at",
@@ -593,7 +636,7 @@ def save_dividend_state(holdings, cash):
         c.execute("DELETE FROM dividend_holdings")
         c.execute("DELETE FROM dividend_cash")
         c.executemany("INSERT INTO dividend_holdings(ticker,shares) VALUES(?,?)",
-                      [(t, int(n)) for t, n in holdings.items() if n])
+                      [(t, shares_value(n)) for t, n in holdings.items() if n])
         c.executemany("INSERT INTO dividend_cash(ticker,amount) VALUES(?,?)",
                       [(t, float(a)) for t, a in cash.items() if a])
 
@@ -603,24 +646,26 @@ def record_dividend(row):
     with conn() as c:
         c.execute(
             "INSERT INTO dividend_events(date,ticker,per_share,ccy,shares_held,gross,"
-            "price,shares_bought,cash_after,pay_date,settled_date) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+            "price,shares_bought,cash_after,pay_date,settled_date,book_date) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(date,ticker) DO NOTHING",
             (row["date"], row["ticker"], row["per_share"], row["ccy"],
              row["shares_held"], row["gross"], row.get("price"),
              row["shares_bought"], row["cash_after"],
-             row.get("pay_date"), row.get("settled_date")))
+             row.get("pay_date"), row.get("settled_date"),
+             row.get("book_date") or row["date"]))
 
 
 def settle_dividend_event(ex_date, ticker, settled_date, price, shares_bought,
-                          cash_after):
+                          cash_after, basis_seq=0):
     """Fill in what the accrual eventually bought, once the cash has arrived."""
     with conn() as c:
         c.execute(
             "UPDATE dividend_events SET settled_date=?, price=?, "
-            "shares_bought=shares_bought+?, cash_after=? WHERE date=? AND ticker=?",
+            "shares_bought=shares_bought+?, cash_after=?, basis_seq=? "
+            "WHERE date=? AND ticker=?",
             (settled_date, price, int(shares_bought), float(cash_after),
-             ex_date, ticker))
+             int(basis_seq), ex_date, ticker))
 
 
 # ---------- dividends awaiting their pay date ----------
@@ -653,6 +698,197 @@ def drop_dividend_pending(ex_date, ticker):
     with conn() as c:
         c.execute("DELETE FROM dividend_pending WHERE ex_date=? AND ticker=?",
                   (ex_date, ticker))
+
+
+def dividend_event(ex_date, ticker):
+    with conn() as c:
+        r = c.execute("SELECT * FROM dividend_events WHERE date=? AND ticker=?",
+                      (ex_date, ticker)).fetchone()
+        return dict(r) if r else None
+
+
+def dividend_events_booked(after, upto):
+    """Events whose cash joined the book in (after, upto]. `after` None = no floor."""
+    q = "SELECT * FROM dividend_events WHERE COALESCE(book_date, date) <= ?"
+    args = [upto]
+    if after:
+        q += " AND COALESCE(book_date, date) > ?"
+        args.append(after)
+    with conn() as c:
+        return [dict(r) for r in c.execute(q + " ORDER BY date, ticker", args)]
+
+
+def earliest_dividend_date():
+    with conn() as c:
+        return c.execute("SELECT MIN(date) FROM dividend_events").fetchone()[0]
+
+
+# ---------- what the archive says about individual sessions ----------
+def last_rebalance_on_or_before(date):
+    """The latest session at or before `date` that rebalanced (or seeded) the index."""
+    with conn() as c:
+        return c.execute("SELECT MAX(date) FROM nav_history WHERE rebalanced=1 "
+                         "AND date<=?", (date,)).fetchone()[0]
+
+
+def first_close_on_or_after(ticker, start, until):
+    """(date, close) of the first stored bar for `ticker` in [start, until], else None."""
+    with conn() as c:
+        r = c.execute("SELECT date, close FROM prices WHERE ticker=? AND date>=? "
+                      "AND date<=? ORDER BY date LIMIT 1",
+                      (ticker, start, until)).fetchone()
+        return (r["date"], r["close"]) if r else None
+
+
+def tickers_with_bar_on(dates):
+    """{date: {tickers that have a stored bar dated exactly that day}}."""
+    dates = list(dates)
+    if not dates:
+        return {}
+    out = {d: set() for d in dates}
+    with conn() as c:
+        q = "SELECT date, ticker FROM prices WHERE date IN (%s)" % ",".join("?" * len(dates))
+        for r in c.execute(q, dates):
+            out[r["date"]].add(r["ticker"])
+    return out
+
+
+def latest_bar_date_per_ticker():
+    with conn() as c:
+        return {r["ticker"]: r["d"] for r in c.execute(
+            "SELECT ticker, MAX(date) AS d FROM prices GROUP BY ticker")}
+
+
+def closes_on(ticker, dates):
+    """{date: close} for the archived bars of `ticker` on those dates."""
+    dates = list(dates)
+    if not dates:
+        return {}
+    with conn() as c:
+        q = ("SELECT date, close FROM prices WHERE ticker=? AND date IN (%s)"
+             % ",".join("?" * len(dates)))
+        return {r["date"]: r["close"] for r in c.execute(q, [ticker] + dates)}
+
+
+# ---------- stock splits ----------
+def shares_value(n):
+    """A share count as stored: an int when whole, the exact count otherwise.
+
+    The index buys whole shares, but a split by a ratio that is not a whole
+    number (3-for-2, or a reverse split) turns whole shares into a fraction.
+    Keeping the exact count keeps the value at every past date unchanged; an
+    int() here would quietly drop part of a holding.
+    """
+    n = float(n)
+    return int(round(n)) if abs(n - round(n)) < 1e-9 else n
+
+
+def max_split_seq():
+    with conn() as c:
+        return c.execute("SELECT COALESCE(MAX(seq), 0) FROM splits").fetchone()[0]
+
+
+def splits(ticker=None):
+    q = "SELECT * FROM splits"
+    args = ()
+    if ticker:
+        q += " WHERE ticker=?"
+        args = (ticker,)
+    with conn() as c:
+        return [dict(r) for r in c.execute(q + " ORDER BY seq", args)]
+
+
+def set_split_effective(seq, date):
+    with conn() as c:
+        c.execute("UPDATE splits SET effective_date=? WHERE seq=?", (date, seq))
+
+
+def apply_split(ticker, ratio, effective_date=None, detected_after=None, verify=None,
+                tolerance=0.02):
+    """
+    Move one constituent to its post-split share basis, in a single transaction.
+
+    Archived closes before `effective_date` (all of them if it is not known yet)
+    are divided by `ratio`. With `verify` — Yahoo's split-adjusted closes by date —
+    each bar is checked first and only those still in the old basis are changed:
+    the daily window can already have overwritten recent bars with adjusted
+    values, and dividing those again would be just as wrong as not dividing the
+    rest.
+
+    Share counts follow, but only those that were in the old basis: the main
+    book if it was last allocated before the split, and dividend-book purchases
+    settled before it (later ones were bought at post-split prices).
+
+    Returns (seq, bars_rescaled, bars_left).
+    """
+    with conn() as c:
+        q, args = "SELECT date, close FROM prices WHERE ticker=?", [ticker]
+        if effective_date:
+            q += " AND date<?"
+            args.append(effective_date)
+        rescaled = left = 0
+        for r in c.execute(q, args).fetchall():
+            if verify is not None:
+                y = verify.get(r["date"])
+                k = (r["close"] / y) if y else None
+                if k is None or abs(k / ratio - 1) >= tolerance:
+                    if k is not None and abs(k - 1) >= tolerance:
+                        print(f"[splits] {ticker} {r['date']}: archived {r['close']} is "
+                              f"neither basis of Yahoo's {y}; left as it is")
+                    left += 1
+                    continue
+            c.execute("UPDATE prices SET close=? WHERE ticker=? AND date=?",
+                      (r["close"] / ratio, ticker, r["date"]))
+            rescaled += 1
+
+        seq = c.execute(
+            "INSERT INTO splits(ticker,ratio,effective_date,detected_after,applied_at,"
+            "bars_rescaled) VALUES(?,?,?,?,?,?)",
+            (ticker, float(ratio), effective_date, detected_after,
+             _dt.datetime.now().isoformat(timespec="seconds"), rescaled)).lastrowid
+
+        last_alloc = c.execute("SELECT MAX(date) FROM nav_history WHERE rebalanced=1"
+                               ).fetchone()[0]
+        if not effective_date or not last_alloc or last_alloc < effective_date:
+            row = c.execute("SELECT shares FROM index_holdings WHERE ticker=?",
+                            (ticker,)).fetchone()
+            if row:
+                c.execute("UPDATE index_holdings SET shares=? WHERE ticker=?",
+                          (shares_value(row["shares"] * ratio), ticker))
+            snap = c.execute("SELECT value FROM meta WHERE key='rebalance_snapshot'"
+                             ).fetchone()
+            if snap and snap["value"]:
+                s = json.loads(snap["value"])
+                if ticker in s.get("main", {}) and (
+                        not effective_date or s.get("date", "") < effective_date):
+                    s["main"][ticker] = shares_value(s["main"][ticker] * ratio)
+                    _set_meta(c, "rebalance_snapshot", json.dumps(s))
+
+        # Purchases made on or after the split were already in the new basis.
+        if effective_date:
+            c.execute("UPDATE dividend_events SET basis_seq=? WHERE ticker=? AND "
+                      "settled_date IS NOT NULL AND settled_date>=?",
+                      (seq, ticker, effective_date))
+        # The dividend book is recounted from its purchases rather than
+        # multiplied, so that purchases already in the new basis stay as they are.
+        n = 0.0
+        q = ("SELECT shares_bought, basis_seq FROM dividend_events WHERE ticker=? "
+             "AND settled_date IS NOT NULL")
+        args = [ticker]
+        if last_alloc:
+            q += " AND COALESCE(book_date, date) > ?"
+            args.append(last_alloc)
+        for e in c.execute(q, args).fetchall():
+            m = 1.0
+            for sp in c.execute("SELECT ratio FROM splits WHERE ticker=? AND seq>?",
+                                (ticker, int(e["basis_seq"] or 0))).fetchall():
+                m *= sp["ratio"]
+            n += int(e["shares_bought"] or 0) * m
+        c.execute("DELETE FROM dividend_holdings WHERE ticker=?", (ticker,))
+        if n:
+            c.execute("INSERT INTO dividend_holdings(ticker,shares) VALUES(?,?)",
+                      (ticker, shares_value(n)))
+        return seq, rescaled, left
 
 
 def pending_dividend_cash():

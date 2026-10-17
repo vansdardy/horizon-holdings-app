@@ -138,8 +138,13 @@ def run_daily_update(day_offset=0, window=1):
     leaving permanent holes in the track record.
     """
     with _fetch_lock:
-        valuation_date, price_rows, fx_rows, div_rows = marketdata.fetch(
+        valuation_date, price_rows, fx_rows, div_rows, split_rows = marketdata.fetch(
             day_offset=day_offset, window=window)
+
+        # --- a split changes the basis of the prices about to be stored ---
+        # Must run before they are persisted: once Yahoo's adjusted closes have
+        # overwritten the archive, nothing remains to compare them against.
+        splits_applied = _apply_splits(price_rows, split_rows)
 
         # --- persist raw market data FIRST ---
         n_p = db.upsert_prices(price_rows)
@@ -178,6 +183,34 @@ def run_daily_update(day_offset=0, window=1):
             print(f"[dividends] pay dates unavailable ({type(e).__name__}: {e})")
             pay_dates = {}
 
+        # Dividends whose ex-date session already has a NAV point. Yahoo
+        # publishes some of them days late, and accrual used to happen only
+        # while computing a session's NAV — so a payment absent from the feed
+        # on the evening it went ex was never booked at all. KO, UNH, AMT and
+        # NTR.TO were lost that way in September 2026, about a fifth of the
+        # fund's income for the month. Anything still inside the window is
+        # booked now, in date order alongside the sessions below so that a
+        # rebalance among them sees exactly the income that preceded it.
+        late_rows, late_ex = [], []
+        if inception:
+            in_todo = set(todo)
+            late_rows = [r for r in div_rows
+                         if r["date"] not in in_todo and r["date"] >= inception]
+            late_ex = sorted({r["date"] for r in late_rows})
+        restate_from = None
+
+        def book_late(before):
+            nonlocal restate_from
+            while late_ex and (before is None or late_ex[0] < before):
+                ex = late_ex.pop(0)
+                try:
+                    booked = index_engine.accrue_dividends(ex, late_rows, pay_dates)
+                except Exception as e:
+                    print(f"[dividends] late {ex}: skipped ({type(e).__name__}: {e})")
+                    continue
+                for ev in booked:
+                    restate_from = _earliest(restate_from, ev["book_date"])
+
         results, backfilled, skipped = [], [], []
         # Every currency except the internal numeraire needs a USD rate; the
         # base/reporting currency needs one too (unless it IS the numeraire).
@@ -186,6 +219,7 @@ def run_daily_update(day_offset=0, window=1):
             need_ccy.append(u.BASE_CCY)
 
         for d in todo:
+            book_late(d)
             fx = db.fx_asof(d)
             missing_fx = [c for c in need_ccy if not fx.get(c)]
             if missing_fx:
@@ -213,6 +247,11 @@ def run_daily_update(day_offset=0, window=1):
                 # Income must never cost the day its NAV point.
                 print(f"[dividends] {d}: skipped ({type(e).__name__}: {e})")
                 paid = {"accrued": [], "settled": []}
+            # A purchase made at an earlier session's close changes every NAV
+            # already published from that session on.
+            for st in paid["settled"]:
+                if st["settled_date"] < d:
+                    restate_from = _earliest(restate_from, st["settled_date"])
             try:
                 r = index_engine.update(d, prices, fx)
             except index_engine.StaleValuationError as e:
@@ -237,7 +276,27 @@ def run_daily_update(day_offset=0, window=1):
             if d != valuation_date:
                 backfilled.append(d)
 
+        book_late(None)
+        restated = []
+        if restate_from:
+            try:
+                restated = index_engine.restate_series(restate_from)
+            except Exception as e:
+                print(f"[dividends] restatement from {restate_from} failed "
+                      f"({type(e).__name__}: {e})")
+
         revised = _revise_partial_navs(need_ccy)
+
+        # Once per database: look back past the window for anything the daily
+        # path missed before the fix above existed, and restate the series
+        # against the ledger. Retried on the next run if the network fails.
+        reconcile = None
+        if db.get_meta("history_repair") != "1":
+            try:
+                reconcile = _repair_history()
+                db.set_meta("history_repair", "1")
+            except Exception as e:
+                print(f"[repair] deferred to the next run ({type(e).__name__}: {e})")
 
         if not results:
             reasons = "; ".join(f"{s['date']}: {s['reason']}" for s in skipped[:4]) or "no sessions returned"
@@ -246,12 +305,238 @@ def run_daily_update(day_offset=0, window=1):
 
         out = dict(results[-1])
         out["revised_dates"] = revised
+        if splits_applied:
+            out["splits_applied"] = splits_applied
+        out["restated_dates"] = [c["date"] for c in restated]
+        if reconcile is not None:
+            out["history_repair"] = reconcile
         out["rows_persisted"] = n_p + n_f
         out["sessions_computed"] = len(results)
         out["backfilled_dates"] = backfilled
         out["skipped_sessions"] = skipped
         out["symbols_missing"] = sorted(set(u.UNIVERSE) - {r["ticker"] for r in price_rows})
         return out
+
+
+def _earliest(a, b):
+    return b if a is None else (a if b is None else min(a, b))
+
+
+def _reconcile_dividends(since=None, restate=True):
+    """
+    Find dividends the daily window never booked, book them, settle any whose
+    pay date has passed at that session's close, and restate the NAV series.
+
+    Reaches back to `since` (default: when reinvestment began on this database).
+    Caller must hold `_fetch_lock`.
+
+    The restatement covers the whole current rebalance period, not just the
+    dates touched here: until this release a revision or backfill valued past
+    sessions against the dividend book as it stood *on the day it ran*, so a
+    past point could carry income that went ex after it. Re-marking every point
+    against the ledger as of its own date removes that too. Only points whose
+    value moves are rewritten, each stamped `revised_at`.
+    """
+    inception = db.get_meta("inception_date")
+    if not inception:
+        return {"skipped": "index not seeded"}
+    since = since or db.get_meta("dividends_since") or db.earliest_dividend_date()
+    upto = db.latest_price_date()
+    if not since or not upto:
+        return {"skipped": "nothing to reconcile"}
+    since = max(since, inception)
+
+    rows = [r for r in marketdata.fetch_dividends(since) if r["date"] <= upto]
+    fresh = sorted({(r["ticker"], r["date"]) for r in rows
+                    if not db.dividend_paid_on(r["date"], r["ticker"])})
+    pay_dates = marketdata.fetch_pay_dates(fresh) if fresh else {}
+
+    booked = []
+    for ex in sorted({d for _, d in fresh}):
+        booked += index_engine.accrue_dividends(ex, rows, pay_dates)
+    settled = index_engine.settle_dividends(upto)
+    restated = index_engine.restate_series(since) if restate else []
+
+    return {
+        "since": since, "through": upto,
+        "booked": [{"ticker": e["ticker"], "ex_date": e["date"], "gross": e["gross"],
+                    "ccy": e["ccy"], "pay_date": e["pay_date"]} for e in booked],
+        "settled": [{"ticker": e["ticker"], "ex_date": e["date"],
+                     "settled_date": e["settled_date"], "price": e["price"],
+                     "shares_bought": e["shares_bought"]} for e in settled],
+        "restated": restated,
+    }
+
+
+_SPLIT_MIN_SHIFT = 1.2      # a whole history moving by less than this is a revision, not a split
+
+
+def _snap_ratio(f):
+    """The simple fraction p/q nearest `f`, or None if none is close enough."""
+    for q in range(1, 21):
+        p = round(f * q)
+        if p >= 1 and abs(f / (p / q) - 1) < 0.004:
+            return p / q
+    return None
+
+
+def _apply_splits(price_rows, split_rows):
+    """
+    Notice a stock split in this fetch and apply it before anything is stored.
+
+    The signal is Yahoo's own history. Every fetch re-sends the last ten days,
+    and a close that has already been archived does not move — except when a
+    split makes Yahoo divide the whole series. So for each constituent, the
+    re-sent closes are compared with the archived ones; if all of them differ by
+    the same factor, and it is a large, simple fraction, the stock has split.
+
+    This catches what Yahoo's split record alone would miss. For Tokyo listings
+    Yahoo adjusts the history on the evening BEFORE the first post-split
+    session, when the split record is not in the feed yet — that is how the
+    8035.T and 8766.T splits of 2026-09-29 reached the archive on Sep 28
+    unnoticed. When the record does appear, it confirms the ratio and supplies
+    the effective date.
+    """
+    applied = []
+    known = db.splits()
+    rows_by_t = {}
+    for r in split_rows:
+        rows_by_t.setdefault(r["ticker"], []).append(r)
+
+    bars = {}
+    for r in price_rows:
+        bars.setdefault(r["ticker"], {})[r["date"]] = r["close"]
+
+    for t, series in bars.items():
+        newest = max(series)
+        past = [d for d in series if d < newest]
+        archived = db.closes_on(t, past)
+        ks = sorted(archived[d] / series[d] for d in past
+                    if d in archived and series[d] > 0)
+        if len(ks) < 2:
+            continue
+        f = ks[len(ks) // 2]
+        if not (f >= _SPLIT_MIN_SHIFT or f <= 1 / _SPLIT_MIN_SHIFT):
+            continue
+        if any(abs(k / f - 1) > 0.005 for k in ks):
+            print(f"[splits] {t}: re-sent history moved inconsistently "
+                  f"({ks[0]:.4f}..{ks[-1]:.4f}); not treated as a split")
+            continue
+        ratio = _snap_ratio(f)
+        row = next((r for r in rows_by_t.get(t, ())
+                    if abs(r["ratio"] / f - 1) < 0.02), None)
+        if row:
+            ratio = row["ratio"]
+        if ratio is None:
+            print(f"[splits] {t}: history moved by {f:.4f}, which is not a split "
+                  f"ratio; left alone")
+            continue
+        seq, n, _ = db.apply_split(t, ratio, row["date"] if row else None, newest)
+        print(f"[splits] {t}: {ratio:g}-for-1 applied, {n} archived closes rescaled")
+        applied.append({"ticker": t, "ratio": ratio,
+                        "effective_date": row["date"] if row else None})
+
+    # A split noticed before its record appeared gets its date when it does.
+    # A record for a split never noticed at all (an archive already mixed by
+    # an older version, or a long gap in fetching) needs the careful repair.
+    unexplained = False
+    for r in split_rows:
+        if any(a["ticker"] == r["ticker"] for a in applied):
+            continue
+        match = next((k for k in known if k["ticker"] == r["ticker"]
+                      and abs(k["ratio"] / r["ratio"] - 1) < 0.02
+                      and k["effective_date"] in (None, r["date"])), None)
+        if match is None:
+            unexplained = True
+        elif match["effective_date"] is None:
+            db.set_split_effective(match["seq"], r["date"])
+    if unexplained:
+        inception = db.get_meta("inception_date")
+        if inception:
+            applied += _repair_splits(inception)
+    return applied
+
+
+def _repair_splits(since):
+    """
+    Bring every split since `since` into the archive and the holdings, checking
+    each archived close against Yahoo's adjusted history so that a bar already
+    in the new basis is never divided twice. Returns the splits applied.
+    """
+    history, split_rows = marketdata.fetch_history(since)
+    known = db.splits()
+    applied = []
+    for r in sorted(split_rows, key=lambda r: r["date"]):
+        t = r["ticker"]
+        if any(k["ticker"] == t and abs(k["ratio"] / r["ratio"] - 1) < 0.02
+               and k["effective_date"] in (None, r["date"]) for k in known):
+            continue
+        seq, n, left = db.apply_split(t, r["ratio"], r["date"], None,
+                                      verify=history.get(t, {}))
+        print(f"[splits] {t}: {r['ratio']:g}-for-1 on {r['date']} repaired, "
+              f"{n} archived closes rescaled, {left} already in the new basis")
+        applied.append({"ticker": t, "ratio": r["ratio"], "effective_date": r["date"],
+                        "bars_rescaled": n, "bars_already_adjusted": left})
+    return applied
+
+
+def _repair_history():
+    """
+    The one-time repair shipped in 1.15.0: splits first, so the archive is in
+    one share basis; then dividends the daily window missed; then one
+    restatement of the NAV series from the earliest date either touched. Points
+    that do not move are not rewritten.
+    """
+    inception = db.get_meta("inception_date")
+    if not inception:
+        return {"skipped": "index not seeded"}
+    splits = _repair_splits(inception)
+    rec = _reconcile_dividends(restate=False)
+    starts = [s["effective_date"] for s in splits if s.get("effective_date")]
+    if rec.get("since"):
+        starts.append(rec["since"])
+    rec["splits"] = splits
+    rec["restated"] = index_engine.restate_series(min(starts)) if starts else []
+    return rec
+
+
+def _classify_carried(history):
+    """
+    Split each NAV point's carried-over constituents into those whose market was
+    shut that session — the carried close is the final answer — and those still
+    waiting on a close that will arrive.
+
+    No holiday calendar: the archive itself says which markets traded. A
+    constituent's market was shut when none of the constituents priced on the
+    same venue has a bar that day while other venues do. Across 78 names in 12
+    venues that is unambiguous wherever a venue has several members. Brussels,
+    Copenhagen and Dublin have one each, where "every member missing" is also
+    what a single late quote looks like, so for those the constituent must also
+    have a later bar: the feed has moved past the day, and that close will never
+    arrive.
+
+    Holidays never stopped a NAV being computed — a closed market is valued at
+    its last close, which is correct. This only changes what the page claims
+    about those points: that they are final, not pending.
+    """
+    dated = [h for h in history if h.get("stale_tickers")]
+    traded = db.tickers_with_bar_on([h["date"] for h in dated])
+    latest = db.latest_bar_date_per_ticker() if dated else {}
+    venues = u.venues()
+    for h in history:
+        stale = [t for t in (h.get("stale_tickers") or "").split(",") if t]
+        on_day = traded.get(h["date"], set())
+        closed, pending = [], []
+        for t in stale:
+            members = venues.get(u.venue(t), [t]) if t in u.UNIVERSE else [t]
+            shut = (not any(m in on_day for m in members)
+                    and any(x not in members for x in on_day))
+            final = latest.get(t, "") > h["date"]
+            (closed if shut and (len(members) >= 2 or final) else pending).append(t)
+        h["closed_tickers"] = closed
+        h["pending_tickers"] = pending
+        h["pending_count"] = len(pending)
+    return history
 
 
 def _revise_partial_navs(need_ccy):
@@ -620,6 +905,23 @@ def api_dividends():
     }
 
 
+@app.post("/api/dividends/reconcile")
+def api_dividends_reconcile(since: str = None):
+    """
+    Book dividends the daily window missed, reaching back to `since`
+    (YYYY-MM-DD; default: when reinvestment began on this database), settle any
+    whose pay date has passed, and restate the NAV series against the ledger.
+    Safe to repeat: nothing already booked is booked again.
+    """
+    if since is not None:
+        try:
+            dt.date.fromisoformat(since)
+        except ValueError:
+            raise HTTPException(400, "since must be YYYY-MM-DD")
+    with _fetch_lock:
+        return _reconcile_dividends(since)
+
+
 @app.post("/api/revise")
 def api_revise():
     """
@@ -828,7 +1130,7 @@ def api_index_holdings():
 def api_nav():
     pd = db.price_dates()
     return {
-        "history": db.nav_history(),
+        "history": _classify_carried(db.nav_history()),
         "stats": index_engine.stats(),
         "archive_range": {"first": pd[0], "last": pd[-1]} if pd else None,
     }

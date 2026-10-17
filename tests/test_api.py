@@ -367,9 +367,9 @@ def _hide_from_fetch(monkeypatch, ticker):
     real = server.marketdata.fetch
 
     def patched(day_offset=0, window=1):
-        vd, prices, fx, divs = real(day_offset=day_offset, window=window)
+        vd, prices, fx, divs, splits = real(day_offset=day_offset, window=window)
         return vd, [r for r in prices
-                    if not (r["ticker"] == ticker and r["date"] == vd)], fx, divs
+                    if not (r["ticker"] == ticker and r["date"] == vd)], fx, divs, splits
 
     monkeypatch.setattr(server.marketdata, "fetch", patched)
 
@@ -445,3 +445,167 @@ def test_revision_never_reaches_past_a_rebalance(client):
 
     assert client.post("/api/revise").json()["revised"] == [], (
         "a day before the last rebalance must be left alone")
+
+
+# ----------------------------------------------------- holidays are final
+# A NAV point records which constituents were valued at a carried-over close.
+# Some of those closes are still coming; others belong to a market that was shut
+# for a holiday, where the last close is the final answer. The page must only
+# call the first kind "pending".
+
+def _bars(date, tickers, price=10.0):
+    db_module.upsert_prices([{"ticker": t, "close": price, "date": date} for t in tickers])
+
+
+def _carried(date, stale):
+    db_module.upsert_nav(date, 1.0, 50.0, 1.0, 0.0, 78, False,
+                         stale_count=len(stale), stale_tickers=sorted(stale))
+
+
+def _row(date):
+    return [h for h in server._classify_carried(db_module.nav_history())
+            if h["date"] == date][0]
+
+
+def test_a_whole_venue_missing_is_a_holiday(client):
+    tokyo = u.venues()["T"]
+    _bars("2026-09-22", [t for t in u.UNIVERSE if t not in tokyo])
+    _carried("2026-09-22", tokyo)
+
+    r = _row("2026-09-22")
+    assert sorted(r["closed_tickers"]) == sorted(tokyo)
+    assert r["pending_count"] == 0
+
+
+def test_one_late_name_on_an_open_venue_is_pending(client):
+    _bars("2026-09-08", [t for t in u.UNIVERSE if t != "AAPL"])
+    _carried("2026-09-08", ["AAPL"])
+
+    r = _row("2026-09-08")
+    assert r["pending_tickers"] == ["AAPL"] and r["closed_tickers"] == []
+
+
+def test_a_single_member_venue_needs_the_feed_to_have_moved_on(client):
+    """Dublin has one constituent, so 'every member missing' is also what one
+    late quote looks like. Only a later bar settles which it was."""
+    _bars("2026-10-06", [t for t in u.UNIVERSE if t != "KRZ.IR"])
+    _carried("2026-10-06", ["KRZ.IR"])
+    assert _row("2026-10-06")["pending_tickers"] == ["KRZ.IR"]
+
+    _bars("2026-10-07", ["KRZ.IR"])
+    assert _row("2026-10-06")["closed_tickers"] == ["KRZ.IR"]
+
+
+def test_the_nav_endpoint_carries_the_split(client):
+    tokyo = u.venues()["T"]
+    _bars("2026-09-22", [t for t in u.UNIVERSE if t not in tokyo])
+    _carried("2026-09-22", tokyo)
+
+    row = [h for h in client.get("/api/nav").json()["history"]
+           if h["date"] == "2026-09-22"][0]
+    assert row["pending_count"] == 0 and len(row["closed_tickers"]) == len(tokyo)
+
+
+# ------------------------------------------------- dividends the window missed
+def test_reconciliation_books_a_missed_dividend_and_restates(client, monkeypatch):
+    """KO went ex on 2026-09-15 and was never booked, because Yahoo had not put
+    it in the feed on the evening it went ex. Reconciliation must find it, pay
+    it on the shares held that day, buy at the pay-date close, and carry the
+    income in every NAV from the ex-date on."""
+    import index_engine as ie
+
+    fx = {c: 1.0 for c in u.CURRENCIES if c != u.NUMERAIRE}
+    days = ["2026-09-11", "2026-09-14", "2026-09-15", "2026-09-16",
+            "2026-09-30", "2026-10-01", "2026-10-02"]
+    db_module.upsert_fx([{"ccy": c, "rate": 1.0, "date": days[0]} for c in fx])
+    for d in days:
+        _bars(d, list(u.UNIVERSE), price=(20.0 if d == "2026-10-01" else 10.0))
+        prices = {t: v["close"] for t, v in db_module.prices_asof(d).items()}
+        ie.update(d, prices, fx)
+    before = {h["date"]: h["nav_usd"] for h in db_module.nav_history()}
+    held = db_module.load_index_state()[0]["KO"]
+    db_module.set_meta("dividends_since", "2026-09-11")
+
+    monkeypatch.setattr(server.marketdata, "fetch_dividends",
+                        lambda start: [{"ticker": "KO", "date": "2026-09-15", "per_share": 0.53}])
+    monkeypatch.setattr(server.marketdata, "fetch_pay_dates",
+                        lambda items: {k: "2026-10-01" for k in items})
+
+    out = client.post("/api/dividends/reconcile").json()
+
+    assert [b["ticker"] for b in out["booked"]] == ["KO"]
+    st = out["settled"][0]
+    assert st["settled_date"] == "2026-10-01" and st["price"] == 20.0
+    assert st["shares_bought"] == int(held * 0.53 // 20.0)
+
+    after = {h["date"]: h["nav_usd"] for h in db_module.nav_history()}
+    assert after["2026-09-14"] == before["2026-09-14"], "untouched before the ex-date"
+    assert after["2026-09-15"] == pytest.approx(before["2026-09-15"] + held * 0.53)
+    assert {r["date"] for r in out["restated"]} >= {"2026-09-15", "2026-09-16", "2026-09-30"}
+
+    again = client.post("/api/dividends/reconcile").json()
+    assert again["booked"] == [] and again["settled"] == [], "safe to repeat"
+
+
+# --------------------------------------------------------- splits in the daily run
+def _feed(monkeypatch, sessions, closes, splits=()):
+    """Make the fetch return `sessions` with every close at 10.0 except where
+    `closes` ({ticker: {date: close}}) says otherwise."""
+    fx_ccys = [c for c in u.CURRENCIES if c != u.NUMERAIRE]
+
+    def fake(day_offset=0, window=1):
+        rows = [{"ticker": t, "date": d, "close": closes.get(t, {}).get(d, 10.0)}
+                for d in sessions for t in u.UNIVERSE]
+        fx = [{"ccy": c, "rate": 1.0, "date": d} for d in sessions for c in fx_ccys]
+        return sessions[-1], rows, fx, [], list(splits)
+
+    monkeypatch.setattr(server.marketdata, "fetch", fake)
+
+
+def _nav_of(date):
+    return [h for h in db_module.nav_history() if h["date"] == date][0]["nav_per_share"]
+
+
+def test_a_tokyo_split_does_not_dent_the_nav(client, monkeypatch):
+    """The real sequence of 2026-09-28/29. Yahoo divided 8035.T's whole history
+    by 5 on the evening of Sep 28, before the split record appeared; the record
+    showed up on Sep 29 with the first post-split close. NAV must not move."""
+    db_module.set_meta("history_repair", "1")      # no network in tests
+    tel = {"2026-09-24": 50.0, "2026-09-25": 50.0}
+    _feed(monkeypatch, ["2026-09-24", "2026-09-25"], {"8035.T": tel})
+    server.run_daily_update()
+    before = _nav_of("2026-09-25")
+    held = db_module.load_index_state()[0]["8035.T"]
+
+    adjusted = {"2026-09-24": 10.0, "2026-09-25": 10.0, "2026-09-28": 10.0}
+    _feed(monkeypatch, ["2026-09-24", "2026-09-25", "2026-09-28"], {"8035.T": adjusted})
+    out = server.run_daily_update()
+
+    assert out["splits_applied"] == [{"ticker": "8035.T", "ratio": 5.0, "effective_date": None}]
+    assert db_module.load_index_state()[0]["8035.T"] == held * 5
+    assert _nav_of("2026-09-28") == pytest.approx(before), "no phantom drop"
+
+    adjusted["2026-09-29"] = 10.0
+    _feed(monkeypatch, ["2026-09-25", "2026-09-28", "2026-09-29"], {"8035.T": adjusted},
+          splits=[{"ticker": "8035.T", "date": "2026-09-29", "ratio": 5.0}])
+    out = server.run_daily_update()
+
+    assert "splits_applied" not in out, "the record confirms the split; it is not applied twice"
+    assert db_module.load_index_state()[0]["8035.T"] == held * 5
+    assert db_module.splits("8035.T")[0]["effective_date"] == "2026-09-29"
+    assert _nav_of("2026-09-29") == pytest.approx(before)
+
+
+def test_an_ordinary_revision_of_a_close_is_not_a_split(client, monkeypatch):
+    db_module.set_meta("history_repair", "1")
+    _feed(monkeypatch, ["2026-09-24", "2026-09-25"], {})
+    server.run_daily_update()
+    held = db_module.load_index_state()[0]["AAPL"]
+
+    _feed(monkeypatch, ["2026-09-24", "2026-09-25", "2026-09-28"],
+          {"AAPL": {"2026-09-24": 10.03, "2026-09-25": 10.03}})
+    out = server.run_daily_update()
+
+    assert "splits_applied" not in out
+    assert db_module.load_index_state()[0]["AAPL"] == held
+

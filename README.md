@@ -166,6 +166,33 @@ record meant to last decades. Pay dates that *are* published are checked before 
 updates the ex-date and the pay date on different schedules, so a value that falls before its
 own ex-date, or a whole quarter after it, is describing a different payment and is discarded.
 
+**A dividend Yahoo publishes late is still booked.** Some payments appear in the feed days after
+their ex-date. Every daily fetch looks back about ten days, and any payment in that window not
+yet on record is booked on the shares held going into its ex-date — not on today's — with its cash
+carried in every NAV from the ex-date on. The affected points are rewritten and marked as
+revised. A purchase always happens at the close of the first session on or after the pay date,
+however late the app gets round to it.
+
+### Stock splits
+
+When a company splits its shares, the index's share count is multiplied by the split ratio and
+every archived close for that company is divided by it, so the value of the index on every past
+day is unchanged. Everything is kept in the *current* share basis, which is how Yahoo serves
+prices. The app notices a split from Yahoo's own history: every fetch re-sends the last ten days,
+and an archived close never moves — except when a split makes Yahoo divide the whole series. That
+also catches Tokyo listings, where Yahoo adjusts the history the evening *before* the first
+post-split session, before any split record appears.
+
+Your own positions are not changed automatically. After a split, update the share count from your
+broker statement.
+
+### Holidays
+
+A market closed for a holiday is valued at its last close, and the NAV is computed as normal —
+a holiday never costs a day its value. The note under the chart counts only closes that are still
+on their way. Whether a missing close is a holiday is read from the data itself: if no company on
+that exchange traded while other exchanges did, the exchange was shut.
+
 ---
 
 ## Build from source
@@ -549,6 +576,7 @@ Interactive documentation at <http://127.0.0.1:8000/docs> while the backend is r
 | `GET /api/archive` | Price archive statistics |
 | `GET /api/fundamentals` | P/E, dividend yield, beta from the last quarterly fetch |
 | `GET /api/dividends` | The reinvested-income book, cash awaiting a pay date, and the payment history |
+| `POST /api/dividends/reconcile` | Book dividends the daily window missed; `?since=YYYY-MM-DD` to reach back further |
 | `POST /api/refresh_fundamentals` | Fetch fundamentals; `?force=true` ignores the quarterly gate |
 | `GET /api/price_history` | Price series, filterable by ticker and date |
 | `GET /api/price_history.csv` | The whole archive as CSV |

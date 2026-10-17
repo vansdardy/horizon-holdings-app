@@ -1353,7 +1353,9 @@ function renderNav(){
       `<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${s}</div></div>`).join('');
 
     const lbl = $('navCcyLabel'); if(lbl) lbl.textContent = '(' + IB + ')';
-    const pending = (NAVFULL || []).filter(h => (h.stale_count || 0) > 0).length;
+    // Only closes that are still coming. A market shut for a holiday is valued
+    // at its last close, which is final, so those points are not "pending".
+    const pending = (NAVFULL || []).filter(h => (h.pending_count ?? h.stale_count ?? 0) > 0).length;
     const pnote = $('navPartial');
     if(pnote){
       pnote.style.display = pending ? '' : 'none';

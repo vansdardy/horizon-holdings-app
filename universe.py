@@ -190,3 +190,27 @@ def yahoo_to_ticker():
     return {v["yahoo"]: t for t, v in UNIVERSE.items()}
 
 CURRENCIES = sorted({v["ccy"] for v in UNIVERSE.values()})
+
+
+def venue(ticker):
+    """
+    The market a constituent is actually priced on, as a short key.
+
+    Taken from the Yahoo symbol's suffix rather than the `exchange` label,
+    because the label describes where a company is listed while the suffix says
+    which order book the prices come from — and only the latter decides which
+    holiday calendar applies. TRI is labelled "TSX/NYSE" but priced as TRI.TO,
+    so it closes for Canadian Thanksgiving and trades on US Independence Day;
+    SAP and ASML have no suffix in their internal keys but are priced in
+    Frankfurt and Amsterdam. No suffix means a US listing.
+    """
+    sym = UNIVERSE[ticker]["yahoo"]
+    return sym.rsplit(".", 1)[1] if "." in sym else "US"
+
+
+def venues():
+    """{venue: [tickers]} across the whole universe."""
+    out = {}
+    for t in UNIVERSE:
+        out.setdefault(venue(t), []).append(t)
+    return out

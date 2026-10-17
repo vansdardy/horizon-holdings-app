@@ -9,6 +9,68 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.15.0
+
+**Fixed**
+
+- **Stock splits were not handled, and NAV was understated by 2.2% for three
+  weeks.** On 2026-09-29 Tokyo Electron (8035.T) split 5-for-1 and Tokio Marine
+  (8766.T) 15-for-1. The index kept its old share counts and valued them at the
+  new, smaller prices, so the chart showed a −2.4% drop on Sep 28 that never
+  happened, and every return, volatility and drawdown figure since inherited
+  it. A split is now detected from Yahoo's own history — every fetch re-sends
+  the last ten days, and an archived close only moves wholesale when a split
+  divides it — and the index's share counts are multiplied while the archived
+  closes are divided by the same ratio, so the value at every past date is
+  unchanged. That also catches Tokyo, where Yahoo adjusts the history the
+  evening before the split's first session, before any split record exists.
+- **Dividends Yahoo publishes late were lost.** Accrual only happened while a
+  session's NAV was being computed, so a payment missing from the feed on the
+  evening it went ex was never booked. Four were lost in September — UNH, KO,
+  NTR.TO and AMT, about a fifth of the dividend income the fund earned
+  between Sep 11 and Oct 16. Any unrecorded
+  payment in the ten-day window is now booked on the shares held going into its
+  ex-date, and the NAV points since are restated.
+- **A revised or backfilled session could carry income from after it.** Past
+  sessions were valued against the dividend book as it stood on the day the
+  job ran. The Sep 7 point, revised on Sep 18, picked up a week of later
+  payments that way. The book is now rebuilt as of each session's own date from
+  the payment history.
+- **Dividend purchases buy at the pay-date close, whenever the job runs.** The
+  price comes from the archive's first session on or after the pay date; if
+  that close is not in yet, the purchase waits rather than using a carried-over
+  price.
+- **A same-day re-run cleared the rebalance flag.** Running the daily update
+  twice on a rebalance day — or on inception day, which is why no point in an
+  existing database carried the flag — rewrote the row with it cleared. The
+  flag now marks where the dividend ledger restarts after a rebalance, so it is
+  preserved once set, and the seed's is restored.
+
+**Changed**
+
+- **Holidays are no longer called pending.** The note under the NAV chart
+  counted every session valued with a carried-over close, including markets
+  shut for a holiday, and promised those points would update "once the data
+  arrives" — which for a closed market never happens. It now counts only closes
+  still on their way. A closed market is recognised from the data: no company
+  on that exchange traded while others did. For the three single-company
+  exchanges, the feed must also have moved past the day.
+
+**One-time repair on first run**
+
+The first fetch after installing repairs the record: the two splits are
+applied (and the archive's closes for those names put back into one basis —
+some had already been overwritten with Yahoo's adjusted values, and those are
+left alone), the four missing dividends are booked and paid at their pay-date
+closes, and the NAV series from 2026-09-14 is re-marked against the corrected
+data. Points before Sep 11 are not touched. Re-marking uses the archive's final
+FX rates and closes, which also corrects points published with rates that were
+not yet final at 18:00 — by up to ±38 bp on some days. Every point that moves
+is stamped `revised_at`. Measured on a copy of a real database: NAV per share
+on 2026-10-16 goes from 49.33 to 50.45.
+
+---
+
 ## v1.14.1
 
 **Fixed**

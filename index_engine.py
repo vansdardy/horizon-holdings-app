@@ -6,6 +6,7 @@ Model index mechanics (same rules verified earlier):
   - annual rebalance on the first observation of a new calendar year
   - daily mark-to-market
 """
+import json
 import math
 import datetime as _dt
 
@@ -131,6 +132,8 @@ def update(date, prices, fx):
         db.set_meta("inception_date", date)
         db.set_meta("last_rebalance_year", date[:4])
         db.set_meta("index_base_ccy", u.BASE_CCY)
+        # Nothing was held before the seed; see shares_held_on.
+        db.set_meta("rebalance_snapshot", json.dumps({"date": date, "main": {}}))
         rebalanced = True
     else:
         last_year = db.get_meta("last_rebalance_year", date[:4])
@@ -145,7 +148,13 @@ def update(date, prices, fx):
             # the index proper, redistributed at target weights like everything
             # else. Its value has to be in the pot BEFORE allocating, or the
             # shares it bought would simply vanish.
-            div_equity, div_cash_usd = dividend_book_value(prices, fx)
+            div_equity, div_cash_usd = dividend_book_value(prices, fx, date)
+            # Remember what was held going into this session. A dividend that
+            # went ex before today but is only recorded after it — Yahoo
+            # publishes some late — is owed on these shares, not on the ones
+            # the rebalance is about to buy.
+            db.set_meta("rebalance_snapshot", json.dumps(
+                {"date": date, "main": {t: int(n) for t, n in holdings.items()}}))
             holdings, cash = _allocate(
                 equity + cash_usd + div_equity + div_cash_usd, prices, fx)
             db.save_index_state(holdings, cash)
@@ -166,7 +175,13 @@ def update(date, prices, fx):
     # Shares bought with reinvested dividends are part of the fund's value, so
     # they are part of NAV. Keeping them in a separate table is a bookkeeping
     # choice about visibility, not a claim that they belong to someone else.
-    div_equity, div_cash_usd = dividend_book_value(prices, fx)
+    # As of `date`, not as of now: when this is a backfill of an earlier
+    # session, income recorded since must not leak into it. On a rebalance day
+    # the book has just been absorbed into the holdings marked above.
+    if rebalanced:
+        div_equity = div_cash_usd = 0.0
+    else:
+        div_equity, div_cash_usd = dividend_book_value(prices, fx, date)
     equity += div_equity
     cash_usd += div_cash_usd
 
@@ -183,6 +198,43 @@ def update(date, prices, fx):
             "dividend_equity_usd": div_equity, "dividend_cash_usd": div_cash_usd}
 
 
+def _valuation(date, prices, fx, after_rebalance):
+    """
+    NAV for `date` from the main holdings stored now and the dividend book as it
+    stood on `date`. Writes nothing.
+
+    Valid only within the current rebalance period, where the main share counts
+    are fixed by definition — callers must not reach back past the last
+    rebalance.
+    """
+    holdings, cash = db.load_index_state()
+    equity, cash_usd, unpriced = _mark(holdings, cash, prices, fx)
+    if unpriced:
+        raise StaleValuationError(
+            f"cannot value {date}: {len(unpriced)} held positions have no price "
+            f"({', '.join(sorted(unpriced)[:8])})")
+    if after_rebalance:
+        div_equity = div_cash_usd = 0.0
+    else:
+        div_equity, div_cash_usd = dividend_book_value(prices, fx, date)
+    equity += div_equity
+    cash_usd += div_cash_usd
+    nav_usd = equity + cash_usd
+    nav_base = to_base(nav_usd, fx)
+    return {"date": date, "nav_usd": nav_usd, "nav_base": nav_base,
+            "nav_per_share": nav_base / u.SHARES_OUTSTANDING,
+            "equity_usd": equity, "cash_usd": cash_usd,
+            "n_priced": sum(1 for t in u.UNIVERSE if prices.get(t))}
+
+
+def _rewrite(v, rebalanced, stale_tickers):
+    db.upsert_nav(v["date"], v["nav_usd"], v["nav_per_share"], v["equity_usd"],
+                  v["cash_usd"], v["n_priced"], rebalanced,
+                  nav_base=v["nav_base"], base_ccy=u.BASE_CCY,
+                  stale_count=len(stale_tickers), stale_tickers=sorted(stale_tickers),
+                  revised_at=_dt.datetime.now().isoformat(timespec="seconds"))
+
+
 def revalue(date, prices, fx, rebalanced, stale_tickers=()):
     """
     Recompute an EXISTING session's NAV from better prices. Mark-to-market only.
@@ -195,38 +247,57 @@ def revalue(date, prices, fx, rebalanced, stale_tickers=()):
 
     Correct only while the holdings have not changed since `date`, which means
     the caller must not reach back past the last rebalance. Within one rebalance
-    period the share counts are fixed by definition, so re-marking them at
-    corrected prices reproduces exactly what the original computation would have
-    produced had the data been complete at the time.
+    period the main share counts are fixed by definition. The dividend book is
+    not fixed — it grows with every payment — which is why it is rebuilt as of
+    `date` from the ledger. Reading the running totals instead is how a revision
+    on Sep 18 once wrote income with ex-dates of Sep 11-18 into the Sep 7 NAV.
 
     `rebalanced` is passed back in rather than recomputed, so a revision cannot
     silently erase the flag recording that this session was a rebalance day.
     """
-    holdings, cash = db.load_index_state()
-    equity, cash_usd, unpriced = _mark(holdings, cash, prices, fx)
-    if unpriced:
-        raise StaleValuationError(
-            f"cannot revalue {date}: {len(unpriced)} held positions have no price "
-            f"({', '.join(sorted(unpriced)[:8])})")
-
-    # Must mirror update(), or correcting a day would quietly write a NAV that
-    # excludes every dividend-bought share.
-    div_equity, div_cash_usd = dividend_book_value(prices, fx)
-    equity += div_equity
-    cash_usd += div_cash_usd
-
-    nav_usd = equity + cash_usd
-    nav_base = to_base(nav_usd, fx)
-    nps = nav_base / u.SHARES_OUTSTANDING
-    n_priced = sum(1 for t in u.UNIVERSE if prices.get(t))
-
-    db.upsert_nav(date, nav_usd, nps, equity, cash_usd, n_priced, rebalanced,
-                  nav_base=nav_base, base_ccy=u.BASE_CCY,
-                  stale_count=len(stale_tickers), stale_tickers=sorted(stale_tickers),
-                  revised_at=_dt.datetime.now().isoformat(timespec="seconds"))
-    return {"date": date, "nav_usd": nav_usd, "nav_base": nav_base,
-            "nav_per_share": nps, "n_priced": n_priced,
+    v = _valuation(date, prices, fx, rebalanced)
+    _rewrite(v, rebalanced, stale_tickers)
+    return {"date": date, "nav_usd": v["nav_usd"], "nav_base": v["nav_base"],
+            "nav_per_share": v["nav_per_share"], "n_priced": v["n_priced"],
             "stale_count": len(stale_tickers)}
+
+
+def restate_series(from_date, tolerance_usd=0.01):
+    """
+    Re-mark every stored NAV point from `from_date` on, after the dividend
+    ledger has changed beneath points that were already published.
+
+    That happens when a dividend is recorded late (its cash belongs in every NAV
+    from its ex-date on) or a purchase settles at an earlier session's close.
+    Only points whose value actually moves are rewritten, and each one rewritten
+    is stamped `revised_at`, so a corrected number is never silently substituted
+    for the original. Never crosses the last rebalance; see `_valuation`.
+
+    Returns [{date, before, after}] for the points that changed.
+    """
+    floor = db.last_rebalance_on_or_before("9999-12-31")
+    start = max(from_date, floor) if floor else from_date
+    changed = []
+    for row in db.nav_history():
+        d = row["date"]
+        if d < start:
+            continue
+        asof = db.prices_asof(d)
+        if not asof:
+            continue
+        prices = {t: q["close"] for t, q in asof.items()}
+        try:
+            v = _valuation(d, prices, db.fx_asof(d), bool(row["rebalanced"]))
+        except (StaleValuationError, ValueError):
+            continue
+        if abs(v["nav_usd"] - (row["nav_usd"] or 0.0)) <= tolerance_usd:
+            continue
+        stale = sorted(t for t, q in asof.items() if q["date"] < d)
+        _rewrite(v, bool(row["rebalanced"]), stale)
+        changed.append({"date": d, "before": row["nav_usd"], "after": v["nav_usd"]})
+    if changed:
+        print(f"[dividends] restated {len(changed)} NAV point(s) from {changed[0]['date']}")
+    return changed
 
 
 def apply_dividends(date, prices, fx, div_rows, pay_dates=None):
@@ -240,13 +311,11 @@ def apply_dividends(date, prices, fx, div_rows, pay_dates=None):
         the dividend that morning, so the value has to be booked then or the NAV
         shows a real drop for something that cost the fund nothing. It is held as
         cash, per constituent, in that constituent's own currency.
-      * On the PAY DATE that cash buys shares, at the price of the session the
-        money actually arrived. Shares cannot be bought with money that has not
-        been paid, and the price that matters is the one on the day of the
-        purchase, not the one two to five weeks earlier.
-
-    An earlier version did both on the ex-date. It kept NAV smooth but bought at
-    a price that predated the cash.
+      * On the PAY DATE that cash buys shares, at the close of the first session
+        on or after it — read from the price archive, so the purchase price does
+        not depend on when the job happens to run. Shares cannot be bought with
+        money that has not been paid, and the price that matters is the one on
+        the day of the purchase.
 
     WHEN NO PAY DATE IS KNOWN THE CASH SIMPLY WAITS. Yahoo publishes no pay date
     for any London, Tokyo or continental European listing — 52% of this fund by
@@ -266,6 +335,9 @@ def apply_dividends(date, prices, fx, div_rows, pay_dates=None):
 
     Dividends are earned on the dividend shares as well as the main holdings.
 
+    `prices` and `fx` are no longer read here — accrual needs neither, and
+    settlement prices come from the archive — but the signature is kept.
+
     Returns {"accrued": [...], "settled": [...]}. Both halves are idempotent: a
     re-fetch covering the same window will not accrue twice (`dividend_events` is
     keyed by (date, ticker)) nor settle twice (a settled accrual is removed from
@@ -275,14 +347,53 @@ def apply_dividends(date, prices, fx, div_rows, pay_dates=None):
             "settled": settle_dividends(date, prices)}
 
 
+def shares_held_on(ticker, ex_date):
+    """
+    Shares entitled to a dividend going ex on `ex_date`: everything owned at the
+    close of the day before, main book and dividend book together.
+
+    Usually that is simply today's main holdings, which do not change between
+    rebalances. The exception is a dividend recorded only after a rebalance its
+    ex-date preceded; then the main book is read from the snapshot the rebalance
+    left behind. Returns None when that snapshot is missing, so the caller can
+    refuse rather than guess.
+    """
+    latest = db.last_rebalance_on_or_before("9999-12-31")
+    if latest is None or ex_date > latest:
+        main, _ = db.load_index_state()
+    else:
+        snap = json.loads(db.get_meta("rebalance_snapshot") or "null")
+        if not snap or snap.get("date") != latest:
+            return None
+        main = snap["main"]
+    eve = (_dt.date.fromisoformat(ex_date) - _dt.timedelta(days=1)).isoformat()
+    div_shares, _ = dividend_book_asof(eve)
+    return int(main.get(ticker, 0)) + int(div_shares.get(ticker, 0))
+
+
+def _day_after(iso):
+    return (_dt.date.fromisoformat(iso) + _dt.timedelta(days=1)).isoformat()
+
+
 def accrue_dividends(date, div_rows, pay_dates=None):
-    """Book the cash for every dividend going ex on `date`. Buys nothing."""
+    """
+    Book the cash for every dividend going ex on `date`. Buys nothing.
+
+    Callable for a past `date` as well as the current one: Yahoo publishes some
+    dividends days after their ex-date, and a payment missing from the feed on
+    the evening it goes ex must still be booked when it appears. The shares
+    entitled are the ones held going into `date`, not today's.
+
+    The cash joins the book on its ex-date (`book_date`), so every NAV from then
+    on includes it. The one exception is a dividend recorded only after a
+    rebalance it should have preceded: that rebalance has already redistributed
+    the book, so the cash joins the new book the day after instead.
+    """
     if not div_rows:
         return []
 
     pay_dates = pay_dates or {}
-    main, _ = db.load_index_state()
-    div_shares, _ = db.load_dividend_state()
+    latest = db.last_rebalance_on_or_before("9999-12-31")
     events = []
 
     for row in sorted(div_rows, key=lambda r: r["ticker"]):
@@ -292,20 +403,37 @@ def accrue_dividends(date, div_rows, pay_dates=None):
         meta = u.UNIVERSE.get(t)
         if meta is None:
             continue
-        held = int(main.get(t, 0)) + int(div_shares.get(t, 0))
-        if held <= 0:
-            continue
         if db.dividend_paid_on(date, t):
             continue
+        held = shares_held_on(t, date)
+        if held is None:
+            print(f"[dividends] {t} ex {date}: holdings before the {latest} "
+                  f"rebalance are not recorded, so the entitlement cannot be "
+                  f"computed; not booked")
+            continue
+        if held <= 0:
+            continue
 
-        gross = held * float(row["per_share"])
+        # Yahoo adjusts a dividend for every split dated AFTER its ex-date,
+        # which puts it in the same basis as `held`. A dividend going ex on the
+        # very day of a split is not adjusted and is still quoted per old share
+        # — Japan does this routinely, both falling on a half-year record date.
+        # 8035.T paid 384 JPY per pre-split share on 2026-09-29, the day of its
+        # 5-for-1 split. Once that split is applied, `held` is in new shares, so
+        # the amount per share must come down by the same ratio.
+        per_share = float(row["per_share"])
+        for sp in db.splits(t):
+            if sp["effective_date"] == date:
+                per_share /= sp["ratio"]
+        gross = held * per_share
         pay_date = pay_dates.get((t, date))
+        book_date = date if (latest is None or date > latest) else _day_after(latest)
         db.add_dividend_pending(date, t, gross, pay_date)
 
-        ev = {"date": date, "ticker": t, "per_share": float(row["per_share"]),
+        ev = {"date": date, "ticker": t, "per_share": per_share,
               "ccy": meta["ccy"], "shares_held": held, "gross": gross,
               "price": None, "shares_bought": 0, "cash_after": gross,
-              "pay_date": pay_date, "settled_date": None}
+              "pay_date": pay_date, "settled_date": None, "book_date": book_date}
         db.record_dividend(ev)
         events.append(ev)
 
@@ -316,18 +444,18 @@ def accrue_dividends(date, div_rows, pay_dates=None):
     return events
 
 
-def settle_dividends(date, prices):
+def settle_dividends(date, prices=None):
     """
     Turn accrued cash into shares for every payment whose pay date has arrived.
 
-    Runs on EVERY session, not only ones with a dividend on them — a pay date
-    lands weeks after its ex-date and generally on a session where nothing goes
-    ex at all.
+    The purchase is made at the close of the first archived session on or after
+    the pay date, and `settled_date` records that session — not the day this
+    happens to run. A payment recorded late, or a job that missed a few days,
+    therefore still buys at the price of the day the money landed. If that
+    session's close is not in the archive yet, the payment waits.
 
     Oldest accrual first, each settled in its own right, so the history can say
-    which payment bought which shares. A constituent with no usable price on this
-    session is left pending and tried again next time rather than being valued at
-    a guess.
+    which payment bought which shares.
     """
     matured = db.dividend_pending(matured_on=date)
     if not matured:
@@ -339,8 +467,15 @@ def settle_dividends(date, prices):
     for row in matured:
         t = row["ticker"]
         meta = u.UNIVERSE.get(t)
-        px = prices.get(t)
-        if meta is None or not px or px <= 0:
+        if meta is None:
+            continue
+        ev = db.dividend_event(row["ex_date"], t) or {}
+        start = max(row["pay_date"], ev.get("book_date") or row["ex_date"])
+        bar = db.first_close_on_or_after(t, start, date)
+        if bar is None:
+            continue
+        bar_date, px = bar
+        if not px or px <= 0:
             continue
 
         pot = div_cash.get(t, 0.0) + float(row["amount"])
@@ -350,11 +485,12 @@ def settle_dividends(date, prices):
         div_cash[t] = pot
 
         db.drop_dividend_pending(row["ex_date"], t)
-        db.settle_dividend_event(row["ex_date"], t, date, px, bought, pot)
+        db.settle_dividend_event(row["ex_date"], t, bar_date, px, bought, pot,
+                                 basis_seq=db.max_split_seq())
         settled.append({"date": row["ex_date"], "ticker": t, "ccy": meta["ccy"],
                         "amount": float(row["amount"]), "price": px,
                         "shares_bought": bought, "cash_after": pot,
-                        "settled_date": date})
+                        "settled_date": bar_date})
 
     if settled:
         db.save_dividend_state(div_shares, div_cash)
@@ -364,19 +500,55 @@ def settle_dividends(date, prices):
     return settled
 
 
-def dividend_book_value(prices, fx):
+def dividend_book_asof(date):
     """
-    (equity_usd, cash_usd) of the dividend book, marked at `prices`.
+    (shares, cash) of the dividend book at the close of `date`, rebuilt from the
+    payment ledger rather than read from the running totals.
 
-    `cash_usd` covers both the remainder too small to buy a share and the money
-    accrued on an ex-date that has not reached its pay date. The latter is real
-    value from the moment the price gaps down, so leaving it out would make the
-    NAV dip on every ex-date and recover on every pay date — the exact artefact
-    that accruing on the ex-date exists to prevent.
+    The running totals only ever describe *now*. Valuing a past session against
+    them — a backfill, a revision, a restatement — would credit it with income
+    that went ex after it, which is exactly what happened to the Sep 7 point
+    when it was revised on Sep 18.
+
+    Counted from the last rebalance at or before `date`, because a rebalance
+    absorbs the whole book. Within that period:
+      shares = every purchase settled by `date`
+      cash   = every payment booked by `date`, less what was spent on shares
+    The cash term is a plain sum, so it does not depend on the order purchases
+    were made in, and it equals the running totals exactly when `date` is today.
+
+    Share counts are in the current basis: a purchase is multiplied through
+    every split applied after it was made (see db.apply_split). The cash spent
+    on it is basis-free, so the cash term needs no such adjustment.
     """
-    shares, cash = db.load_dividend_state()
-    for t, amount in db.pending_dividend_cash().items():
-        cash[t] = cash.get(t, 0.0) + amount
+    floor = db.last_rebalance_on_or_before(date)
+    by_ticker = {}
+    for sp in db.splits():
+        by_ticker.setdefault(sp["ticker"], []).append((sp["seq"], sp["ratio"]))
+
+    def through_splits(t, basis):
+        m = 1.0
+        for seq, ratio in by_ticker.get(t, ()):
+            if seq > (basis or 0):
+                m *= ratio
+        return m
+
+    shares, cash = {}, {}
+    for e in db.dividend_events_booked(floor, date):
+        t = e["ticker"]
+        gross = float(e["gross"])
+        if e["settled_date"] and e["settled_date"] <= date:
+            n = int(e["shares_bought"] or 0)
+            shares[t] = db.shares_value(shares.get(t, 0) + n * through_splits(t, e["basis_seq"]))
+            cash[t] = cash.get(t, 0.0) + gross - n * float(e["price"] or 0.0)
+        else:
+            cash[t] = cash.get(t, 0.0) + gross
+    return shares, cash
+
+
+def dividend_book_value(prices, fx, asof):
+    """(equity_usd, cash_usd) of the dividend book as of `asof`, marked at `prices`."""
+    shares, cash = dividend_book_asof(asof)
     equity = 0.0
     for t, n in shares.items():
         meta = u.UNIVERSE.get(t)

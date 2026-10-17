@@ -68,11 +68,12 @@ def fetch_live():
     # ---- phase 1: primaries + FX ----
     data = download(list(primary.values()) + fx_syms)
 
-    resolved, price_rows, div_rows = {}, [], []
+    resolved, price_rows, div_rows, split_rows = {}, [], [], []
 
     def take(t, sym, s, src=None):
         resolved[t] = sym
         _collect_dividends(t, sym, data if src is None else src, div_rows)
+        _collect_splits(t, sym, data if src is None else src, split_rows)
         # Normalise the quote unit to the listing's currency the moment the data
         # arrives, so that everything downstream — valuation, share counts, the
         # user's own positions — works in one unit. London quotes in pence; see
@@ -170,8 +171,9 @@ def fetch_live():
     # Only dividends inside the valued window matter; anything dated after the
     # session being valued has not happened yet as far as this index is concerned.
     div_rows = [r for r in div_rows if r["date"] <= valuation_date]
+    split_rows = [r for r in split_rows if r["date"] <= valuation_date]
 
-    return valuation_date, price_rows, fx_rows, div_rows
+    return valuation_date, price_rows, fx_rows, div_rows, split_rows
 
 
 def _collect_dividends(ticker, symbol, data, out):
@@ -247,6 +249,29 @@ def fetch_pay_dates(items):
     return out
 
 
+def fetch_dividends(start):
+    """
+    Every dividend with an ex-date on or after `start`, for all constituents.
+
+    The daily fetch only sees its ~10-day window, which is enough when Yahoo
+    publishes a dividend on time and not otherwise: a payment that appears in
+    the feed after its ex-date has scrolled out of the window is never seen
+    again. This reaches back as far as asked, in one batched request, so a
+    reconciliation can find what the daily path missed.
+    """
+    if USE_MOCK:
+        return []
+    import yfinance as yf
+
+    syms = {u.UNIVERSE[t]["yahoo"]: t for t in u.UNIVERSE}
+    data = yf.download(list(syms), start=start, interval="1d", auto_adjust=False,
+                       progress=False, group_by="ticker", actions=True, threads=True)
+    out = []
+    for sym, t in syms.items():
+        _collect_dividends(t, sym, data, out)
+    return [r for r in out if r["date"] >= start]
+
+
 def _as_date(raw):
     """Yahoo hands these back as a unix timestamp; be liberal about the rest."""
     if raw is None:
@@ -263,6 +288,57 @@ def _as_date(raw):
         return dt.date.fromisoformat(str(raw)[:10])
     except ValueError:
         return None
+
+
+def _collect_splits(ticker, symbol, data, out):
+    """
+    Pull the Stock Splits column for one constituent out of the batch response.
+
+    Yahoo reports a split as new shares per old share (5.0 for 5-for-1) and
+    serves every close before it divided by that ratio. The index's share
+    counts have to move by the same ratio on the same day, or it goes on valuing
+    the old number of shares at the new, smaller price — which is what happened
+    to Tokyo Electron and Tokio Marine on 2026-09-29.
+    """
+    if data is None:
+        return
+    try:
+        series = data[symbol]["Stock Splits"].dropna()
+    except Exception:
+        return
+    for idx, val in series.items():
+        ratio = float(val)
+        if ratio <= 0 or abs(ratio - 1.0) < 1e-9:
+            continue
+        out.append({"ticker": ticker, "date": idx.date().isoformat(), "ratio": ratio})
+
+
+def fetch_history(start):
+    """
+    ({ticker: {date: close}}, split_rows) from `start` to now, for every
+    constituent, in one batched request.
+
+    Closes come back as Yahoo serves them — adjusted for every split since —
+    and in the listing's currency (London's pence already converted). Used to
+    tell which archived bars are in which share basis.
+    """
+    if USE_MOCK:
+        return {}, []
+    import yfinance as yf
+
+    syms = {u.UNIVERSE[t]["yahoo"]: t for t in u.UNIVERSE}
+    data = yf.download(list(syms), start=start, interval="1d", auto_adjust=False,
+                       progress=False, group_by="ticker", actions=True, threads=True)
+    closes, splits = {}, []
+    for sym, t in syms.items():
+        try:
+            s = data[sym]["Close"].dropna()
+        except Exception:
+            continue
+        div = u.price_divisor(t)
+        closes[t] = {i.date().isoformat(): float(v) / div for i, v in s.items()}
+        _collect_splits(t, sym, data, splits)
+    return closes, [r for r in splits if r["date"] >= start]
 
 
 def _session_has_ended(day, tickers, resolved):
@@ -462,7 +538,7 @@ def fetch_mock(day_offset=0, window=1):
     # No mock dividends on purpose. Inventing them would put fabricated income
     # into every mock NAV series and make the mock curve quietly untrue to its
     # own rules; tests that need a dividend supply it explicitly instead.
-    return valuation_date, price_rows, fx_rows, []
+    return valuation_date, price_rows, fx_rows, [], []
 
 
 def fetch(day_offset=0, window=1):
