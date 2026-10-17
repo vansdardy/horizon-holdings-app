@@ -9,6 +9,24 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.15.2
+
+**Changed**
+
+- **A dividend paid after the rebalance is no longer swept into it.** The
+  annual rebalance used to absorb every payment still waiting, including one
+  that went ex in December with a known pay date in January. That money is not
+  in hand on the day of the rebalance, so — by the same rule that stops shares
+  being bought before the pay date — it cannot be redistributed either. It now
+  carries over: still counted in NAV as cash waiting, and on its pay date it
+  buys shares of the company that paid it, in the new year's dividend book.
+  The rebalance still absorbs the shares, the leftover cash, every payment with
+  no published pay date, and any payment whose pay date had already come. No
+  rebalance has happened yet on any existing database, so nothing needs
+  repairing.
+
+---
+
 ## v1.15.1
 
 **Changed**

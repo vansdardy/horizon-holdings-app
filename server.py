@@ -871,7 +871,9 @@ def api_dividends():
         # keeps the history from showing it as "awaiting" forever.
         if not e["settled_date"]:
             booked = e.get("book_date") or e["date"]
-            e["absorbed_on"] = next((r for r in rebalances if r >= booked), None)
+            e["absorbed_on"] = next(
+                (r for r in rebalances
+                 if r >= booked and (not e["pay_date"] or e["pay_date"] <= r)), None)
         meta = u.UNIVERSE.get(e["ticker"]) or {}
         e["name"] = meta.get("name")
         e["name_en"] = meta.get("name_en")

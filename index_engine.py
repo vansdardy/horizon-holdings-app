@@ -149,6 +149,12 @@ def update(date, prices, fx):
             # else. Its value has to be in the pot BEFORE allocating, or the
             # shares it bought would simply vanish.
             div_equity, div_cash_usd = dividend_book_value(prices, fx, date)
+            # Except money that has not arrived: a payment that went ex before
+            # today but pays after it is not cash on the day of the rebalance,
+            # so it cannot be redistributed. It carries over (see
+            # db.clear_dividend_state) and stays in NAV as cash waiting.
+            _, carried_usd = dividend_book_value(prices, fx, date, rebalance_on=date)
+            div_cash_usd -= carried_usd
             # Remember what was held going into this session. A dividend that
             # went ex before today but is only recorded after it — Yahoo
             # publishes some late — is owed on these shares, not on the ones
@@ -158,7 +164,7 @@ def update(date, prices, fx):
             holdings, cash = _allocate(
                 equity + cash_usd + div_equity + div_cash_usd, prices, fx)
             db.save_index_state(holdings, cash)
-            db.clear_dividend_state()
+            db.clear_dividend_state(date)
             if div_equity or div_cash_usd:
                 print(f"[dividends] {date}: rebalance absorbed "
                       f"{div_equity + div_cash_usd:,.2f} USD of reinvested income")
@@ -177,9 +183,10 @@ def update(date, prices, fx):
     # choice about visibility, not a claim that they belong to someone else.
     # As of `date`, not as of now: when this is a backfill of an earlier
     # session, income recorded since must not leak into it. On a rebalance day
-    # the book has just been absorbed into the holdings marked above.
+    # the book has just been absorbed into the holdings marked above, apart
+    # from any payment carried over because its pay date is still to come.
     if rebalanced:
-        div_equity = div_cash_usd = 0.0
+        div_equity, div_cash_usd = dividend_book_value(prices, fx, date, rebalance_on=date)
     else:
         div_equity, div_cash_usd = dividend_book_value(prices, fx, date)
     equity += div_equity
@@ -213,10 +220,8 @@ def _valuation(date, prices, fx, after_rebalance):
         raise StaleValuationError(
             f"cannot value {date}: {len(unpriced)} held positions have no price "
             f"({', '.join(sorted(unpriced)[:8])})")
-    if after_rebalance:
-        div_equity = div_cash_usd = 0.0
-    else:
-        div_equity, div_cash_usd = dividend_book_value(prices, fx, date)
+    div_equity, div_cash_usd = dividend_book_value(
+        prices, fx, date, rebalance_on=date if after_rebalance else None)
     equity += div_equity
     cash_usd += div_cash_usd
     nav_usd = equity + cash_usd
@@ -500,7 +505,7 @@ def settle_dividends(date, prices=None):
     return settled
 
 
-def dividend_book_asof(date):
+def dividend_book_asof(date, rebalance_on=None):
     """
     (shares, cash) of the dividend book at the close of `date`, rebuilt from the
     payment ledger rather than read from the running totals.
@@ -521,7 +526,7 @@ def dividend_book_asof(date):
     every split applied after it was made (see db.apply_split). The cash spent
     on it is basis-free, so the cash term needs no such adjustment.
     """
-    floor = db.last_rebalance_on_or_before(date)
+    floor = rebalance_on or db.last_rebalance_on_or_before(date)
     by_ticker = {}
     for sp in db.splits():
         by_ticker.setdefault(sp["ticker"], []).append((sp["seq"], sp["ratio"]))
@@ -546,9 +551,15 @@ def dividend_book_asof(date):
     return shares, cash
 
 
-def dividend_book_value(prices, fx, asof):
-    """(equity_usd, cash_usd) of the dividend book as of `asof`, marked at `prices`."""
-    shares, cash = dividend_book_asof(asof)
+def dividend_book_value(prices, fx, asof, rebalance_on=None):
+    """
+    (equity_usd, cash_usd) of the dividend book as of `asof`, marked at `prices`.
+
+    `rebalance_on` names the rebalance the period starts from when it is `asof`
+    itself and not yet in the NAV history — i.e. the book left over right after
+    rebalancing, which is only the payments carried across it.
+    """
+    shares, cash = dividend_book_asof(asof, rebalance_on)
     equity = 0.0
     for t, n in shares.items():
         meta = u.UNIVERSE.get(t)

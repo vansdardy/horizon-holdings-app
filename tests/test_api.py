@@ -632,3 +632,18 @@ def test_a_payment_the_rebalance_absorbed_says_so(client):
     ev = [e for e in client.get("/api/dividends").json()["events"] if e["ticker"] == "KO"][0]
     assert ev["absorbed_on"] == "2027-01-04"
 
+
+def test_a_payment_carried_over_the_rebalance_is_not_called_absorbed(client):
+    import index_engine as ie
+
+    fx = {c: 1.0 for c in u.CURRENCIES if c != u.NUMERAIRE}
+    prices = {t: 10.0 for t in u.UNIVERSE}
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-12-28", prices, fx,
+                       [{"ticker": "KO", "date": "2026-12-28", "per_share": 1.0}],
+                       {("KO", "2026-12-28"): "2027-01-15"})
+    ie.update("2027-01-04", prices, fx)
+
+    ev = [e for e in client.get("/api/dividends").json()["events"] if e["ticker"] == "KO"][0]
+    assert ev["absorbed_on"] is None
+

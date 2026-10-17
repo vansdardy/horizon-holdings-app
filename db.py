@@ -708,12 +708,23 @@ def dividend_event(ex_date, ticker):
 
 
 def dividend_events_booked(after, upto):
-    """Events whose cash joined the book in (after, upto]. `after` None = no floor."""
-    q = "SELECT * FROM dividend_events WHERE COALESCE(book_date, date) <= ?"
-    args = [upto]
-    if after:
-        q += " AND COALESCE(book_date, date) > ?"
-        args.append(after)
+    """
+    Events belonging to the dividend book of the period that began with the
+    rebalance on `after` (None: no rebalance yet), as of `upto`.
+
+    That is every payment booked in (after, upto], plus any payment booked
+    before the rebalance whose pay date fell after it: its cash had not arrived,
+    so the rebalance could not use it, and it carried over into the new book
+    until it is paid.
+    """
+    if not after:
+        q, args = "SELECT * FROM dividend_events WHERE COALESCE(book_date, date) <= ?", [upto]
+    else:
+        q = ("SELECT * FROM dividend_events WHERE "
+             "(COALESCE(book_date, date) > ? AND COALESCE(book_date, date) <= ?) OR "
+             "(COALESCE(book_date, date) <= ? AND pay_date IS NOT NULL AND pay_date > ? "
+             " AND (settled_date IS NULL OR settled_date > ?))")
+        args = [after, upto, after, after, after]
     with conn() as c:
         return [dict(r) for r in c.execute(q + " ORDER BY date, ticker", args)]
 
@@ -882,8 +893,11 @@ def apply_split(ticker, ratio, effective_date=None, detected_after=None, verify=
              "AND settled_date IS NOT NULL")
         args = [ticker]
         if last_alloc:
-            q += " AND COALESCE(book_date, date) > ?"
-            args.append(last_alloc)
+            # Same membership as the ledger: booked since the last rebalance, or
+            # carried across it because its pay date fell after it.
+            q += (" AND (COALESCE(book_date, date) > ? OR "
+                  "(pay_date IS NOT NULL AND pay_date > ? AND settled_date > ?))")
+            args += [last_alloc] * 3
         for e in c.execute(q, args).fetchall():
             m = 1.0
             for sp in c.execute("SELECT ratio FROM splits WHERE ticker=? AND seq>?",
@@ -919,18 +933,22 @@ def dividend_events(limit=None):
         return [dict(r) for r in c.execute(q)]
 
 
-def clear_dividend_state():
+def clear_dividend_state(rebalance_date):
     """
     Fold the dividend book away — called when a rebalance absorbs it.
 
-    Pending accruals go too. Their cash is part of the value being re-allocated,
-    and a payment still waiting on a pay date that will fall after the rebalance
-    would otherwise buy shares for a book that no longer exists.
+    Absorbed: the shares, the leftover cash, and every waiting payment whose
+    cash has arrived or will never be dated — no pay date published, or a pay
+    date on or before the rebalance. Kept: payments whose pay date is still to
+    come. Their money is not in hand on the day of the rebalance, so it cannot
+    be redistributed; it stays waiting and buys shares of the payer on its pay
+    date, in the new book. (Before 1.15.2 those were absorbed as well.)
     """
     with conn() as c:
         c.execute("DELETE FROM dividend_holdings")
         c.execute("DELETE FROM dividend_cash")
-        c.execute("DELETE FROM dividend_pending")
+        c.execute("DELETE FROM dividend_pending WHERE pay_date IS NULL OR pay_date <= ?",
+                  (rebalance_date,))
 
 
 def set_nav_staleness(date, stale_tickers):

@@ -144,7 +144,10 @@ by several times for a richly valued company.
 The index receives dividends, and the shares they buy are kept in a **separate book** so the
 part of the fund built out of income stays visible instead of being blended into the main
 holdings. Those shares earn dividends themselves, which is what makes it compound, and the
-annual rebalance absorbs the whole book back into the index. Your own positions under
+annual rebalance absorbs the whole book back into the index. The one exception is a payment
+that has gone ex but whose pay date falls after the rebalance: its cash has not arrived, so the
+rebalance cannot redistribute it. It stays in the fund's value as cash waiting, and buys shares of
+the company that paid it on its pay date, as part of the new year's book. Your own positions under
 **My Positions** are untouched by any of this.
 
 Two dates matter, and the app treats them differently on purpose:

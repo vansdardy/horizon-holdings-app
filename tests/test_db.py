@@ -372,8 +372,11 @@ def test_pending_cash_survives_and_is_cleared_by_the_rebalance(db):
     assert [r["ticker"] for r in matured] == ["KO"], (
         "a NULL pay date must never mature, however late the session")
 
-    db.clear_dividend_state()
-    assert db.pending_dividend_cash() == {}
+    # A rebalance absorbs what has arrived or will never be dated, and keeps
+    # what is still to be paid.
+    db.add_dividend_pending("2026-12-28", "PG", 700.0, "2027-01-15")
+    db.clear_dividend_state("2027-01-04")
+    assert db.pending_dividend_cash() == {"PG": 700.0}
 
 
 def test_an_accrual_is_never_recorded_twice(db):

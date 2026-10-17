@@ -246,6 +246,9 @@ in-place. Preserve them:
   rebuilds it from `dividend_events`; the running totals (`dividend_holdings`/`dividend_cash`/
   `dividend_pending`) describe only now, and reading them for a backfill or revision credits a
   past day with later income. The two must agree exactly for today — tests assert it.
+  A rebalance absorbs only cash that has arrived or will never be dated; a payment whose pay
+  date falls after it carries into the new period (`db.dividend_events_booked`,
+  `db.clear_dividend_state`), and anything that counts the book must use that same membership.
 - **`nav_history.rebalanced` marks where the dividend ledger restarts**, so it must never be
   cleared: `upsert_nav` keeps a set flag (`MAX`). A same-day re-run of `update()` used to erase it,
   including the seed's.

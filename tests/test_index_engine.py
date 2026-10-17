@@ -659,9 +659,10 @@ def test_a_fractional_split_keeps_the_exact_share_count(db, fx, prices):
     assert db.load_index_state()[0]["KO"] == 4.5
 
 
-def test_a_payment_due_after_the_rebalance_goes_into_it_as_cash(db, fx, prices):
-    """Ex in December, paid in January: the rebalance takes the cash, and the
-    later pay date must not then buy shares for a book that no longer exists."""
+def test_a_payment_due_after_the_rebalance_is_carried_across_it(db, fx, prices):
+    """Ex in December, paid in January: not cash on the day of the rebalance, so
+    the rebalance must not redistribute it. It stays in NAV as cash waiting, and
+    buys the payer's shares on its pay date, in the new book."""
     import index_engine as ie
 
     ie.update("2026-06-01", prices, fx)
@@ -669,12 +670,53 @@ def test_a_payment_due_after_the_rebalance_goes_into_it_as_cash(db, fx, prices):
     ie.apply_dividends("2026-12-28", prices, fx, _div("KO", "2026-12-28", 1.0),
                        _pay("KO", "2026-12-28", "2027-01-15"))
     before = ie.update("2026-12-28", prices, fx)["nav_usd"]
-    assert ie.update("2027-01-04", prices, fx)["nav_usd"] == pytest.approx(before)
+
+    r = ie.update("2027-01-04", prices, fx)
+    assert r["rebalanced"] is True
+    assert r["nav_usd"] == pytest.approx(before), "carried or not, value is unchanged"
+    assert r["dividend_cash_usd"] == pytest.approx(held * 1.0), "still in NAV, as cash waiting"
+    assert db.pending_dividend_cash()["KO"] == pytest.approx(held * 1.0), "not absorbed"
+    main_after = sum(n * 10.0 for n in db.load_index_state()[0].values())
+    assert main_after <= before - held * 1.0 + 1e-6, "the rebalance did not spend it"
+    assert ie.revalue("2027-01-04", prices, fx, True)["nav_usd"] == pytest.approx(r["nav_usd"]), (
+        "re-marking the rebalance day later must find the same carried cash")
 
     _archive(db, "2027-01-15")
-    assert ie.apply_dividends("2027-01-15", prices, fx, [], None)["settled"] == []
-    assert db.load_dividend_state()[0] == {}
-    assert ie.update("2027-01-15", prices, fx)["nav_usd"] == pytest.approx(before), (
-        "the January payment was already in the rebalance; counting it again would "
-        f"add {held:,} x 1.0")
+    st = ie.apply_dividends("2027-01-15", prices, fx, [], None)["settled"][0]
+    assert st["settled_date"] == "2027-01-15" and st["shares_bought"] == int(held // 10)
+    assert db.load_dividend_state()[0]["KO"] == st["shares_bought"]
+    assert ie.update("2027-01-15", prices, fx)["nav_usd"] == pytest.approx(before)
+    assert ie.dividend_book_asof("2027-01-20")[0] == db.load_dividend_state()[0]
+
+
+def test_at_a_rebalance_only_dateless_or_arrived_cash_is_absorbed(db, fx, prices):
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-12-18", prices, fx,
+                       _div("KO", "2026-12-18", 1.0) + _div("JNJ", "2026-12-18", 1.0)
+                       + _div("PG", "2026-12-18", 1.0),
+                       {("KO", "2026-12-18"): None,              # never dated
+                        ("JNJ", "2026-12-18"): "2026-12-31",     # arrived, not yet spent
+                        ("PG", "2026-12-18"): "2027-01-12"})     # still to come
+    _archive(db, "2026-12-31", skip={"JNJ"})                     # so JNJ could not buy yet
+    before = ie.update("2026-12-31", prices, fx)["nav_usd"]
+
+    assert ie.update("2027-01-04", prices, fx)["nav_usd"] == pytest.approx(before)
+    assert set(db.pending_dividend_cash()) == {"PG"}
+
+
+def test_a_split_keeps_shares_bought_by_a_carried_payment(db, fx, prices):
+    import index_engine as ie
+
+    ie.update("2026-06-01", prices, fx)
+    ie.apply_dividends("2026-12-28", prices, fx, _div("KO", "2026-12-28", 1.0),
+                       _pay("KO", "2026-12-28", "2027-01-15"))
+    ie.update("2027-01-04", prices, fx)
+    _archive(db, "2027-01-15")
+    bought = ie.apply_dividends("2027-01-15", prices, fx, [], None)["settled"][0]["shares_bought"]
+
+    db.apply_split("KO", 2.0, "2027-02-01")
+    assert db.load_dividend_state()[0]["KO"] == bought * 2
+    assert ie.dividend_book_asof("2027-02-05")[0]["KO"] == bought * 2
 
