@@ -458,3 +458,37 @@ test('the page polls for data that arrives after it loaded', () => {
   assert.match(fn[0], /DIRTY\.size/,
     'a refresh must not overwrite figures the user is part-way through typing');
 });
+
+// ---------------------------------------------------------------------------
+// The page is one script. A function called at the top level runs during that
+// first pass, before any `const` further down has been initialised — touching
+// one throws "Cannot access before initialization" and every section after it
+// fails to render. renderValueMap() did exactly this with `$` in 1.15.3's
+// first draft; nothing caught it but looking at the page.
+test('functions run during the first pass use no helper declared later', () => {
+  const script = inlineScripts(HTML).join('\n');
+  const decl = /^const (\$|LIB|EFFECTIVE_DATA)\s*=/gm;
+  const declaredAt = {};
+  let m;
+  while ((m = decl.exec(script))) declaredAt[m[1]] = m.index;
+
+  const problems = [];
+  const call = /^([A-Za-z_]\w*)\(\);\s*$/gm;
+  while ((m = call.exec(script))) {
+    const name = m[1], at = m.index;
+    const def = new RegExp('function ' + name + '\\s*\\(').exec(script);
+    if (!def) continue;
+    let depth = 0, i = script.indexOf('{', def.index), end = i;
+    for (; end < script.length; end++) {
+      if (script[end] === '{') depth++;
+      else if (script[end] === '}' && --depth === 0) break;
+    }
+    const body = script.slice(i, end).replace(/\/\/[^\n]*/g, '');   // comments are not code
+    for (const [helper, pos] of Object.entries(declaredAt)) {
+      const esc = helper.replace(/\$/g, '\\$');
+      const used = new RegExp('(^|[^\\w$.])' + esc + '\\s*[(.]').test(body);
+      if (pos > at && used) problems.push(`${name}() runs before ${helper} is declared`);
+    }
+  }
+  assert.deepStrictEqual(problems, []);
+});

@@ -39,7 +39,7 @@
       's02.geo': 'Geography',
 
       's03.title': 'Value Map',
-      's03.desc': 'Valuation runs along the horizontal axis (P/E — further left is cheaper) and dividend yield up the vertical (higher is more income). Bubble size is portfolio weight and colour is sector, so the portfolio\'s value-and-income character is visible at a glance. Figures are approximate estimates; hover for detail.',
+      's03.desc': 'Valuation runs along the horizontal axis (P/E — further left is cheaper) and dividend yield up the vertical (higher is more income). Bubble size is portfolio weight and colour is sector, so the portfolio\'s value-and-income character is visible at a glance. A name far outside the rest is listed under the map rather than plotted, so one extreme value cannot squeeze everything else into a corner. Figures are approximate estimates; hover for detail.',
       's03.legend': '// Larger bubble = larger portfolio weight · top-left quadrant = cheap and high-yielding (the classic value corner)',
 
       's04.title': 'Holdings',
@@ -201,6 +201,12 @@
       'vm.livePe': ' - live ({type} P/E)',
       'vm.est': ' - estimate',
       'vm.live': ' - live',
+      'vm.outliersHead': 'Not plotted, so the other {n} stay readable:',
+      'vm.outlierItem': '{t} {name} — P/E {pe}× · yield {dy}% · weight {w}% ({why})',
+      'vm.whyPeHigh': 'P/E far above the rest',
+      'vm.whyPeLow': 'P/E far below the rest',
+      'vm.whyDyHigh': 'yield far above the rest',
+      'vm.whyDyLow': 'yield far below the rest',
       'live.title': 'Live data ({q}, fetched {d})',
       'live.titlePe': 'Live {type} P/E ({q}, fetched {d})',
       'sb.latestPrice': 'Latest price date',
@@ -294,7 +300,7 @@
       's02.geo': '地域配置 · Geography',
 
       's03.title': '价值地图 Value Map',
-      's03.desc': '横轴为估值(P/E,越靠左越便宜)、纵轴为股息率(越靠上收益越高)、气泡大小为组合权重、颜色代表板块 —— 直观呈现组合的"价值 + 收益"分布特征。数据为近似估算,悬停查看明细。',
+      's03.desc': '横轴为估值(P/E,越靠左越便宜)、纵轴为股息率(越靠上收益越高)、气泡大小为组合权重、颜色代表板块 —— 直观呈现组合的"价值 + 收益"分布特征。与其余成分股相差悬殊的个股会列在图下方而不绘入图中,以免一个极端值把其他点都挤到角落。数据为近似估算,悬停查看明细。',
       's03.legend': '// 气泡越大 = 组合权重越高 · 左上角象限 = 低估值 + 高股息(经典价值区)',
 
       's04.title': '持仓明细 Holdings',
@@ -456,6 +462,12 @@
       'vm.livePe': ' · 实时({type}PE)',
       'vm.est': ' · 估算',
       'vm.live': ' · 实时',
+      'vm.outliersHead': '以下未绘入图中,以免其余 {n} 只被挤压:',
+      'vm.outlierItem': '{t} {name} —— P/E {pe}× · 股息率 {dy}% · 权重 {w}%({why})',
+      'vm.whyPeHigh': 'P/E 远高于其他成分股',
+      'vm.whyPeLow': 'P/E 远低于其他成分股',
+      'vm.whyDyHigh': '股息率远高于其他成分股',
+      'vm.whyDyLow': '股息率远低于其他成分股',
       'live.title': '实时数据({q} · 拉取于 {d})',
       'live.titlePe': '实时{type}PE({q} · 拉取于 {d})',
       'sb.latestPrice': '最新价格日',

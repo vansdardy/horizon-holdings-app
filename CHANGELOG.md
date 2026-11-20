@@ -9,6 +9,39 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.15.3
+
+**Changed**
+
+- **The Value Map no longer lets one name set the scale.** ARM's trailing P/E
+  of about 300× stretched the horizontal axis so far that the other 77
+  constituents were squeezed into its left quarter. A constituent far outside
+  the rest on either axis — beyond Tukey's "far out" fence, three interquartile
+  ranges past the quartiles, measured on log P/E — is now listed beneath the
+  map with its figures instead of plotted. On current data that is ARM alone;
+  ASML and Constellation are rich but are part of the picture and stay on it.
+  The log scale is what lets the same rule catch an implausibly low P/E too.
+
+**Fixed**
+
+- **Japanese interim dividends confirmed weeks late were missed.** Japanese
+  companies often set the amount of an interim dividend only with their
+  half-year results, and Yahoo adds the payment once the amount is known —
+  long after the ten-day window has passed it. Topcon and Nintendo, both ex on
+  2026-09-29, were missed this way: about 1.7M CHF of income. A weekly sweep
+  now looks back 120 days in one batched request, never before the day
+  reinvestment began on the database. On first run it books those two and
+  restates the NAV series from Sep 29; points before then are not touched.
+- **Fundamentals fetched mid-split were stuck for a quarter.** The quarterly
+  fetch on 2026-10-01 ran two days after the Tokyo splits, while Yahoo still
+  reported earnings and dividends per old share against the new price: Tokio
+  Marine showed a P/E of 1.9 and Tokyo Electron 9.4× with a 3.6% yield, against
+  about 50× and 1.9% once Yahoo caught up. Fundamentals fetched within 21 days
+  after a split are now refetched for that company once the window has passed;
+  those two are refreshed on the first run.
+
+---
+
 ## v1.15.2
 
 **Changed**

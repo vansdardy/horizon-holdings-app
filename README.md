@@ -176,6 +176,12 @@ carried in every NAV from the ex-date on. The affected points are rewritten and 
 revised. A purchase always happens at the close of the first session on or after the pay date,
 however late the app gets round to it.
 
+Some dividends appear far later than ten days. Japanese companies often fix the amount of an
+interim dividend only with their half-year results, weeks after the record date, and Yahoo adds
+the payment once the amount is known. So once a week the app also looks back 120 days. It never
+reaches back before the day reinvestment began on your database: the series before that was
+published price-only and stays that way.
+
 ### Stock splits
 
 When a company splits its shares, the index's share count is multiplied by the split ratio and

@@ -37,7 +37,7 @@ Install/refresh deps:
 node --test tests/js/*.test.js
 ```
 
-74 tests, about 8 seconds total. Note the JS invocation: `node --test tests/js` (a bare
+About 190 tests (122 Python, 67 JS), roughly a minute in total. Note the JS invocation: `node --test tests/js` (a bare
 directory) fails under Git Bash with a confusing `Cannot find module` — pass the glob.
 
 Backend tests substitute `db.DB_PATH` per test, which works only because `db.conn()` reads
@@ -195,10 +195,13 @@ packaged build, which is why testing `win-unpacked/` and not just `npm start` ma
   → `VerifiedAndReputablePolicyState = 1`). It blocks the packaged
   `Horizon Holdings.exe` outright — "An Application Control policy has blocked this file",
   logged in `Microsoft-Windows-CodeIntegrity/Operational`. This is not a build defect and
-  there is nothing in the code to fix. The PyInstaller `horizon-backend.exe` is *not* blocked,
-  only the rebranded Electron binary, so `npm start` (which runs Electron's own signed binary
-  plus the frozen backend) remains a full test path for everything except the
-  `app.isPackaged` branches. Do not attempt to disable Smart App Control — turning it off is
+  there is nothing in the code to fix. The verdict is per build — it rates the bytes of an
+  unsigned binary — so it can land on **any** unsigned executable, including the PyInstaller
+  `horizon-backend.exe` (blocked for the first 1.15.3 build, "Permission denied" from bash) and
+  the installer (v1.14.0). **Run the frozen backend from `build/backend/` before packaging**: if
+  it is refused, re-freeze for different bytes rather than ship a binary this machine — the
+  user's own — will not run. `npm start` (Electron's own signed binary plus the frozen backend)
+  remains a full test path for everything except the `app.isPackaged` branches. Do not attempt to disable Smart App Control — turning it off is
   irreversible without reinstalling Windows, and it is the user's decision.
 
 ### Two currencies, not one
@@ -256,6 +259,14 @@ in-place. Preserve them:
   unrecorded payment in the window is booked on the shares held going into its ex-date, and the
   affected NAV points are restated (`restate_series`). KO, UNH, AMT and NTR.TO were lost in
   September 2026 when accrual only happened while computing a session's own NAV.
+  A weekly sweep (`DIVIDEND_SWEEP_DAYS`, 120) catches Japanese interim dividends Yahoo adds only
+  once the amount is set, weeks later. **No reconciliation may book before `meta.dividends_since`**
+  (when reinvestment began on that database): the series before it is price-only by the user's
+  decision, and a 120-day lookback once tried to book 17 pre-feature payments.
+- **Fundamentals fetched within `SPLIT_SETTLE_DAYS` (21) after a split are refetched once the
+  window passes** (`server._fundamentals_fetched_mid_split`). Yahoo adjusts price and per-share
+  EPS/dividend at different times: the 2026-10-01 fetch recorded 8766.T at a P/E of 1.9. A split
+  *after* a fetch is harmless — P/E and yield are ratios read in one basis.
 
 ### State lives in `meta`
 
@@ -301,6 +312,10 @@ Two things to know before editing it:
   `universe.py`**, including the precomputed `w` weight and the *static fallback* `pe`/`dy`/
   `beta` estimates that exist nowhere else in the codebase. Changing the universe, scores, or
   weights in Python requires updating `DATA` too, or the page and API will disagree.
+- **Code that runs during the script's first pass must not use a `const` declared further
+  down** (`$` is at ~line 1245; `renderValueMap()` and others are called long before). It
+  throws "Cannot access before initialization" and silently stops every later section from
+  rendering. `page-integrity.test.js` checks the top-level calls for this.
 - Chart.js and the webfonts are vendored under `static/vendor/` and referenced **relatively**
   (`vendor/chart.umd.min.js`), so the same tag resolves whether the page is served at `/` or
   opened straight from disk. `server.py` mounts `/vendor` to make the served case work — that

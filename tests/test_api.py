@@ -647,3 +647,89 @@ def test_a_payment_carried_over_the_rebalance_is_not_called_absorbed(client):
     ev = [e for e in client.get("/api/dividends").json()["events"] if e["ticker"] == "KO"][0]
     assert ev["absorbed_on"] is None
 
+
+# ------------------------------------------- fundamentals caught mid-split
+def test_fundamentals_fetched_just_after_a_split_are_refreshed_later(client, monkeypatch):
+    import datetime as _dt
+    db_module.upsert_prices([{"ticker": "8766.T", "close": 8000.0, "date": "2026-09-25"}])
+    db_module.apply_split("8766.T", 15.0, "2026-09-29")
+    db_module.apply_split("8035.T", 5.0, "2026-09-29")
+    db_module.upsert_fundamentals("2026-Q4", "2026-10-01", [
+        {"ticker": "8766.T", "pe": 1.93, "pe_type": "trailing", "div_yield": None, "beta": None}])
+    db_module.upsert_fundamentals("2026-Q4", "2026-09-20", [
+        {"ticker": "8035.T", "pe": 47.0, "pe_type": "trailing", "div_yield": 0.007, "beta": 1.3}])
+
+    # Inside the settling window nothing is refetched yet.
+    assert server._fundamentals_fetched_mid_split("2026-10-10") == []
+    # Afterwards only the row fetched mid-split is; 8035.T was fetched before.
+    assert server._fundamentals_fetched_mid_split("2026-11-20") == ["8766.T"]
+
+    db_module.set_meta("last_fundamentals_quarter", server.marketdata.current_quarter())
+    calls = []
+    monkeypatch.setattr(server.marketdata, "fetch_fundamentals", lambda ts: (calls.append(ts) or (
+        [{"ticker": "8766.T", "pe": 49.8, "pe_type": "trailing", "div_yield": 0.027, "beta": None}],
+        [], [])))
+    monkeypatch.setattr(server.marketdata, "current_quarter", lambda: "2026-Q4")
+    out = server.run_fundamentals_update()
+
+    assert calls == [["8766.T"]], "one ticker, not all 78"
+    assert out["refreshed_after_split"] == ["8766.T"]
+    assert db_module.latest_fundamentals()["8766.T"]["pe"] == 49.8
+    assert server._fundamentals_fetched_mid_split(_dt.date.today().isoformat()) == [], (
+        "refreshed rows are not refetched again")
+
+
+# ------------------------------------------- dividends confirmed weeks late
+def test_the_weekly_sweep_books_a_dividend_published_weeks_late(client, monkeypatch):
+    """Topcon and Nintendo went ex on 2026-09-29 and only appeared in Yahoo's
+    feed in November, long after the 10-day window had passed them."""
+    db_module.set_meta("history_repair", "1")
+    db_module.set_meta("dividends_since", "2026-09-11")   # as on the real database
+    db_module.upsert_fx([{"ccy": c, "rate": 1.0, "date": "2026-09-28"}
+                         for c in u.CURRENCIES if c != u.NUMERAIRE])
+    for d in ("2026-09-28", "2026-09-29", "2026-09-30"):
+        _bars(d, list(u.UNIVERSE))
+    import index_engine as ie
+    for d in ("2026-09-28", "2026-09-29", "2026-09-30"):
+        ie.update(d, {t: 10.0 for t in u.UNIVERSE},
+                  {c: 1.0 for c in u.CURRENCIES if c != u.NUMERAIRE})
+    held = db_module.load_index_state()[0]["7974.T"]
+
+    monkeypatch.setattr(server.marketdata, "fetch_dividends",
+                        lambda start: [{"ticker": "7974.T", "date": "2026-09-29", "per_share": 76.0}])
+    monkeypatch.setattr(server.marketdata, "fetch_pay_dates",
+                        lambda items: {k: None for k in items})
+    _feed(monkeypatch, ["2026-09-30"], {})
+    out = server.run_daily_update()
+
+    assert [b["ticker"] for b in out["dividend_sweep"]["booked"]] == ["7974.T"]
+    assert db_module.pending_dividend_cash()["7974.T"] == pytest.approx(held * 76.0)
+    assert db_module.get_meta("dividend_sweep_date"), "the sweep records when it ran"
+
+    out = server.run_daily_update()
+    assert "dividend_sweep" not in out, "and does not run again within the week"
+
+
+def test_no_sweep_reaches_back_before_reinvestment_began(client, monkeypatch):
+    db_module.set_meta("history_repair", "1")
+    db_module.upsert_fx([{"ccy": c, "rate": 1.0, "date": "2026-08-13"}
+                         for c in u.CURRENCIES if c != u.NUMERAIRE])
+    import index_engine as ie
+    for d in ("2026-08-13", "2026-08-20", "2026-09-14"):
+        _bars(d, list(u.UNIVERSE))
+        ie.update(d, {t: 10.0 for t in u.UNIVERSE},
+                  {c: 1.0 for c in u.CURRENCIES if c != u.NUMERAIRE})
+    db_module.set_meta("dividends_since", "2026-09-11")
+    before = {h["date"]: h["nav_usd"] for h in db_module.nav_history()}
+
+    monkeypatch.setattr(server.marketdata, "fetch_dividends", lambda start: [
+        {"ticker": "KO", "date": "2026-08-20", "per_share": 0.5},     # before: never
+        {"ticker": "KO", "date": "2026-09-14", "per_share": 0.5}])    # after: booked
+    monkeypatch.setattr(server.marketdata, "fetch_pay_dates",
+                        lambda items: {k: None for k in items})
+    out = server._reconcile_dividends("2026-07-01")
+
+    assert [(b["ticker"], b["ex_date"]) for b in out["booked"]] == [("KO", "2026-09-14")]
+    after = {h["date"]: h["nav_usd"] for h in db_module.nav_history()}
+    assert after["2026-08-20"] == before["2026-08-20"], "the price-only past is left alone"
+

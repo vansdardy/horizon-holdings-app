@@ -144,3 +144,38 @@ test('a window longer than the history falls back to everything', () => {
   // chart that looks like the app is broken.
   assert.equal(lib.sliceTF(history, '10Y').length, history.length);
 });
+
+
+// ---------------------------------------------------------------- value map
+// The universe's actual P/E spread on 2026-11-20 (all 78, with the two Tokyo
+// split names at their corrected values), ARM's 298x first.
+const PE = [298.3, 62.9, 50.2, 49.8, 46.2, 44.1, 43.9, 41.5, 37.8, 36.9, 35.2, 34.4, 31.7,
+  31.6, 30.6, 30.2, 30.2, 30.0, 30.0, 28.6, 28.5, 28.4, 28.0, 27.8, 27.2, 27.1, 26.4, 25.9,
+  25.9, 24.7, 23.8, 23.6, 23.5, 23.4, 22.7, 22.6, 22.2, 22.1, 22.1, 21.8, 21.7, 21.4, 21.4,
+  21.4, 21.2, 20.8, 20.5, 20.1, 19.5, 18.8, 18.3, 17.7, 17.5, 17.3, 17.2, 17.2, 17.2, 17.1,
+  17.0, 16.8, 15.9, 15.9, 15.8, 14.6, 14.4, 14.2, 14.2, 13.7, 13.6, 13.5, 12.6, 12.5, 12.4,
+  12.4, 12.1, 11.7, 10.6, 9.5];
+
+test('the far-out fence on log P/E removes ARM and nothing else', () => {
+  const f = lib.outlierFences(PE, {k: 3, log: true});
+  assert.deepEqual(PE.filter(x => x < f.lo || x > f.hi), [298.3]);
+});
+
+test('an implausibly low P/E is caught too, which a linear fence cannot do', () => {
+  const vals = PE.concat([1.9]);
+  const f = lib.outlierFences(vals, {k: 3, log: true});
+  assert.ok(1.9 < f.lo, 'the 8766.T mid-split artefact sits below the log fence');
+  assert.ok(lib.outlierFences(vals, {k: 3}).lo < 0, 'a linear lower fence is negative');
+});
+
+test('a handful of values is never trimmed', () => {
+  const f = lib.outlierFences([1, 2, 3, 1000], {k: 3});
+  assert.equal(f.lo, -Infinity);
+  assert.equal(f.hi, Infinity);
+});
+
+test('non-finite values are ignored when computing fences', () => {
+  const f = lib.outlierFences([NaN, null, undefined, ...PE], {k: 3, log: true});
+  assert.ok(Number.isFinite(f.lo) && Number.isFinite(f.hi));
+});
+

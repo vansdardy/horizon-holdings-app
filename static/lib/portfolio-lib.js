@@ -114,5 +114,41 @@
     return out.length ? out : hist;
   }
 
-  return { CCY_SYMBOL, sym, noDecimals, inBase, moneyBase, fmtShares, peTypeLabel, sliceTF };
+  /** Linear-interpolated quantile of an ascending array. */
+  function quantile(sorted, p) {
+    const i = (sorted.length - 1) * p, lo = Math.floor(i);
+    const hi = Math.min(lo + 1, sorted.length - 1);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+  }
+
+  /**
+   * {lo, hi} outside which a value is far from the rest: Tukey's fences,
+   * quartiles -/+ k interquartile ranges. k = 3 is Tukey's "far out", which on
+   * this universe's P/E picks out ARM (298x against a median of 22) and nothing
+   * else — a fence at 1.5 would also have removed ASML and Constellation, which
+   * are rich but are part of the picture, not distortions of it.
+   *
+   * `log` computes the fences on log values, for ratios like P/E where being 4x
+   * cheaper than the rest is as unusual as being 4x dearer. It is also the only
+   * way an implausibly LOW P/E gets caught: on a linear scale the lower fence
+   * lands below zero. In log mode a value that is not positive is outside.
+   *
+   * Fewer than 8 usable values give no fences; quartiles of a handful of points
+   * would call ordinary spread an outlier.
+   */
+  function outlierFences(values, opts) {
+    const k = (opts && opts.k) || 3;
+    const log = !!(opts && opts.log);
+    const v = values.filter(x => Number.isFinite(x) && (!log || x > 0))
+                    .map(x => log ? Math.log(x) : x)
+                    .sort((a, b) => a - b);
+    if (v.length < 8) return { lo: -Infinity, hi: Infinity };
+    const q1 = quantile(v, 0.25), q3 = quantile(v, 0.75), iqr = q3 - q1;
+    let lo = q1 - k * iqr, hi = q3 + k * iqr;
+    if (log) { lo = Math.exp(lo); hi = Math.exp(hi); }
+    return { lo, hi };
+  }
+
+  return { CCY_SYMBOL, sym, noDecimals, inBase, moneyBase, fmtShares, peTypeLabel, sliceTF,
+           outlierFences };
 });

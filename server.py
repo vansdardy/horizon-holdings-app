@@ -298,6 +298,25 @@ def run_daily_update(day_offset=0, window=1):
             except Exception as e:
                 print(f"[repair] deferred to the next run ({type(e).__name__}: {e})")
 
+        # Once a week, look back DIVIDEND_SWEEP_DAYS for dividends the 10-day
+        # window could not have seen. Japanese companies often set the amount
+        # of an interim dividend only with their half-year results, weeks after
+        # the record date, and Yahoo adds the payment when the amount is known:
+        # Topcon (7741.T) and Nintendo (7974.T) went ex on 2026-09-29 and first
+        # appeared in the feed in November, about 1.7M CHF between them. One
+        # batched request a week.
+        sweep = None
+        today = dt.date.today()
+        last_sweep = db.get_meta("dividend_sweep_date")
+        if inception and (not last_sweep or
+                          (today - dt.date.fromisoformat(last_sweep)).days >= 7):
+            try:
+                since = (today - dt.timedelta(days=DIVIDEND_SWEEP_DAYS)).isoformat()
+                sweep = _reconcile_dividends(since)
+                db.set_meta("dividend_sweep_date", today.isoformat())
+            except Exception as e:
+                print(f"[dividends] weekly sweep deferred ({type(e).__name__}: {e})")
+
         if not results:
             reasons = "; ".join(f"{s['date']}: {s['reason']}" for s in skipped[:4]) or "no sessions returned"
             raise index_engine.StaleValuationError(
@@ -310,6 +329,8 @@ def run_daily_update(day_offset=0, window=1):
         out["restated_dates"] = [c["date"] for c in restated]
         if reconcile is not None:
             out["history_repair"] = reconcile
+        if sweep and (sweep.get("booked") or sweep.get("settled")):
+            out["dividend_sweep"] = sweep
         out["rows_persisted"] = n_p + n_f
         out["sessions_computed"] = len(results)
         out["backfilled_dates"] = backfilled
@@ -340,13 +361,18 @@ def _reconcile_dividends(since=None, restate=True):
     inception = db.get_meta("inception_date")
     if not inception:
         return {"skipped": "index not seeded"}
-    since = since or db.get_meta("dividends_since") or db.earliest_dividend_date()
+    began = db.get_meta("dividends_since") or db.earliest_dividend_date()
+    since = since or began
     upto = db.latest_price_date()
     if not since or not upto:
         return {"skipped": "nothing to reconcile"}
-    since = max(since, inception)
+    # Never before reinvestment began on this database. The series before that
+    # point was published price-only and kept that way by choice; booking older
+    # income would quietly turn it into total return. The weekly sweep's
+    # lookback reached 17 pre-feature payments this way in a dry run.
+    since = max(since, inception, began or since)
 
-    rows = [r for r in marketdata.fetch_dividends(since) if r["date"] <= upto]
+    rows = [r for r in marketdata.fetch_dividends(since) if since <= r["date"] <= upto]
     fresh = sorted({(r["ticker"], r["date"]) for r in rows
                     if not db.dividend_paid_on(r["date"], r["ticker"])})
     pay_dates = marketdata.fetch_pay_dates(fresh) if fresh else {}
@@ -355,7 +381,11 @@ def _reconcile_dividends(since=None, restate=True):
     for ex in sorted({d for _, d in fresh}):
         booked += index_engine.accrue_dividends(ex, rows, pay_dates)
     settled = index_engine.settle_dividends(upto)
-    restated = index_engine.restate_series(since) if restate else []
+    # Restate only from the first date this run actually changed. Restating
+    # the whole lookback every time would re-mark weeks of points weekly for
+    # nothing; the one-time repair restates its full range explicitly.
+    touched = [e["book_date"] for e in booked] + [e["settled_date"] for e in settled]
+    restated = index_engine.restate_series(min(touched)) if (restate and touched) else []
 
     return {
         "since": since, "through": upto,
@@ -604,7 +634,17 @@ def run_fundamentals_update(force=False):
     """
     quarter = marketdata.current_quarter()
     if not force and db.get_meta("last_fundamentals_quarter") == quarter:
-        return {"skipped": True, "quarter": quarter, "reason": "already fetched this quarter"}
+        today = dt.date.today().isoformat()
+        redo = _fundamentals_fetched_mid_split(today)
+        if not redo:
+            return {"skipped": True, "quarter": quarter,
+                    "reason": "already fetched this quarter"}
+        with _fetch_lock:
+            rows, failed, flagged = marketdata.fetch_fundamentals(redo)
+            n = db.upsert_fundamentals(quarter, today, rows)
+        print(f"[fundamentals] refreshed {', '.join(redo)}: last fetched mid-split")
+        return {"skipped": False, "quarter": quarter, "as_of": today, "fetched": n,
+                "failed": failed, "flagged": flagged, "refreshed_after_split": redo}
     with _fetch_lock:
         rows, failed, flagged = marketdata.fetch_fundamentals(list(u.UNIVERSE.keys()))
         as_of = dt.date.today().isoformat()
@@ -615,6 +655,41 @@ def run_fundamentals_update(force=False):
         db.set_meta("last_fundamentals_flagged", " | ".join(flagged))
         return {"skipped": False, "quarter": quarter, "as_of": as_of,
                 "fetched": n, "failed": failed, "flagged": flagged}
+
+
+# How far back the weekly dividend sweep looks; see run_daily_update.
+DIVIDEND_SWEEP_DAYS = 120
+
+# Fundamentals fetched this soon after a split are distrusted until refreshed.
+SPLIT_SETTLE_DAYS = 21
+
+
+def _fundamentals_fetched_mid_split(today):
+    """
+    Constituents whose current fundamentals were fetched within
+    SPLIT_SETTLE_DAYS after a split, now that the window has passed.
+
+    Yahoo does not adjust a split's per-share figures all at once. The
+    quarterly fetch of 2026-10-01 ran two days after Tokyo Electron's 5-for-1
+    and Tokio Marine's 15-for-1 splits, and caught trailing EPS and the
+    dividend rate still per OLD share against the new price: 8766.T came out at
+    a P/E of 1.9 and 8035.T at 9.4 with a 3.6% yield, against about 50x and
+    1.9% once Yahoo caught up. Those numbers would otherwise sit there until the
+    next quarter. A split AFTER a fetch is harmless — P/E and yield are ratios
+    of figures that were in the same basis when read.
+    """
+    rows = db.latest_fundamentals()
+    out = []
+    for s in db.splits():
+        start = s["effective_date"] or s["applied_at"][:10]
+        r = rows.get(s["ticker"])
+        if not r or not r["as_of"]:
+            continue
+        settled = (dt.date.fromisoformat(start)
+                   + dt.timedelta(days=SPLIT_SETTLE_DAYS)).isoformat()
+        if start <= r["as_of"] < settled <= today and s["ticker"] not in out:
+            out.append(s["ticker"])
+    return out
 
 
 def _scheduler():
