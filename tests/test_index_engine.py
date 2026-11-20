@@ -720,3 +720,24 @@ def test_a_split_keeps_shares_bought_by_a_carried_payment(db, fx, prices):
     assert db.load_dividend_state()[0]["KO"] == bought * 2
     assert ie.dividend_book_asof("2027-02-05")[0]["KO"] == bought * 2
 
+
+def test_a_change_in_the_base_rate_alone_is_restated(db, fx, prices, monkeypatch):
+    """Nothing held in the base currency: the USD value does not move at all,
+    only the reported one does. It must still be rewritten."""
+    import index_engine as ie
+    import universe
+    held = {t: v for t, v in prices.items() if universe.UNIVERSE[t]["ccy"] != u.BASE_CCY}
+    _archive(db, "2026-06-01")
+    ie.update("2026-06-01", prices, fx)
+    db.save_index_state({t: n for t, n in db.load_index_state()[0].items() if t in held},
+                        db.load_index_state()[1])
+    _archive(db, "2026-06-02")
+    ie.update("2026-06-02", prices, fx)
+    before = [h for h in db.nav_history() if h["date"] == "2026-06-02"][0]
+    db.upsert_fx([{"ccy": u.BASE_CCY, "rate": 1.10, "date": "2026-06-02"}])
+
+    changed = ie.restate_series("2026-06-02")
+    after = [h for h in db.nav_history() if h["date"] == "2026-06-02"][0]
+    assert [c["date"] for c in changed] == ["2026-06-02"]
+    assert after["nav_base"] != pytest.approx(before["nav_base"])
+

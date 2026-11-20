@@ -295,13 +295,16 @@ def restate_series(from_date, tolerance_usd=0.01):
             v = _valuation(d, prices, db.fx_asof(d), bool(row["rebalanced"]))
         except (StaleValuationError, ValueError):
             continue
-        if abs(v["nav_usd"] - (row["nav_usd"] or 0.0)) <= tolerance_usd:
+        # Both currencies: a change in the base-currency rate alone moves
+        # nav_base while leaving nav_usd almost where it was.
+        if (abs(v["nav_usd"] - (row["nav_usd"] or 0.0)) <= tolerance_usd and
+                abs(v["nav_base"] - (row["nav_base"] or 0.0)) <= tolerance_usd):
             continue
         stale = sorted(t for t, q in asof.items() if q["date"] < d)
         _rewrite(v, bool(row["rebalanced"]), stale)
         changed.append({"date": d, "before": row["nav_usd"], "after": v["nav_usd"]})
     if changed:
-        print(f"[dividends] restated {len(changed)} NAV point(s) from {changed[0]['date']}")
+        print(f"[restate] {len(changed)} NAV point(s) re-marked from {changed[0]['date']}")
     return changed
 
 

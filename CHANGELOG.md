@@ -9,6 +9,27 @@ They are unsigned — see the README for what Windows will show you.
 
 ---
 
+## v1.15.4
+
+**Fixed**
+
+- **Weekday NAV points used exchange rates that were still moving.** The
+  daily fetch runs at 18:00, and on every weekday except Friday the currency
+  market is still trading then. The next day's fetch stores the final rate, but
+  the published point kept the provisional one. Measured on a real series:
+  Monday-to-Thursday points off by up to about 0.5% in the reporting currency,
+  every Friday point exact. The FX market closes at 17:00 ET on Friday, so
+  every Friday evening the week's points are now re-valued with final rates,
+  each changed point marked as revised. A missed Friday is caught up on the
+  next scheduled run; the days before a January rebalance are finalised just
+  before it, since nothing can re-value across one. Points before dividend
+  reinvestment began are left as first published.
+- **A restatement could miss a change in the reporting-currency rate.** Points
+  were compared in USD only, and a USD-to-CHF rate change moves the CHF NAV
+  while leaving the USD value almost where it was. Both are compared now.
+
+---
+
 ## v1.15.3
 
 **Changed**

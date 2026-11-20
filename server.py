@@ -211,6 +211,17 @@ def run_daily_update(day_offset=0, window=1):
                 for ev in booked:
                     restate_from = _earliest(restate_from, ev["book_date"])
 
+        # A rebalance is a wall the weekly FX revision cannot see past (holdings
+        # change there), so the days since the last revision are finalised now,
+        # just before it: their rates are final, since this fetch has already
+        # re-stored the window.
+        year = db.get_meta("last_rebalance_year")
+        if inception and year and any(d[:4] != year for d in todo):
+            first_new = min(d for d in todo if d[:4] != year)
+            before = [d for d in db.nav_dates() if d < first_new]    # a set: no order
+            if before:
+                _revise_fx(max(before))
+
         results, backfilled, skipped = [], [], []
         # Every currency except the internal numeraire needs a USD rate; the
         # base/reporting currency needs one too (unless it IS the numeraire).
@@ -657,6 +668,56 @@ def run_fundamentals_update(force=False):
                 "fetched": n, "failed": failed, "flagged": flagged}
 
 
+def _revise_fx(through):
+    """
+    Re-mark every NAV point after the last FX revision, up to `through` and
+    beyond, against the archive. Caller holds `_fetch_lock`.
+
+    The first revision on a database starts where dividend reinvestment began:
+    the points before it were left as first published, by choice, on 2026-10-17.
+    """
+    done = db.get_meta("fx_revised_through")
+    if done:
+        start = (dt.date.fromisoformat(done) + dt.timedelta(days=1)).isoformat()
+    else:
+        start = db.get_meta("dividends_since") or db.get_meta("inception_date")
+    if not start or start > through:
+        return []
+    changed = index_engine.restate_series(start)
+    db.set_meta("fx_revised_through", through)
+    return changed
+
+
+def run_fx_revision(today=None):
+    """
+    Once a week, correct the week's NAV points with final exchange rates.
+
+    The daily fetch runs at FETCH_HOUR, when the currency market is still
+    trading on every weekday but Friday — so a Monday-to-Thursday point is
+    valued with a rate that has not finished moving, and the next day's fetch
+    overwrites the archive with the final one while the published point keeps
+    the provisional figure. Measured on the real series in November 2026: weekday
+    points off by up to about 0.5% in CHF, every Friday point exact. The FX
+    market closes at 17:00 ET on Friday, so by the Friday evening run every rate
+    for the week is final, and one pass fixes the week.
+
+    Runs from the scheduler after the daily update, never from a manual fetch.
+    Catches up on the first scheduled run after a missed Friday. Only points
+    whose value actually moves are rewritten, each stamped `revised_at`.
+    """
+    today = today or dt.date.today()
+    friday = today - dt.timedelta(days=(today.weekday() - 4) % 7)
+    through = friday.isoformat()
+    done = db.get_meta("fx_revised_through")
+    if done and done >= through:
+        return {"skipped": True, "revised_through": done}
+    with _fetch_lock:
+        changed = _revise_fx(through)
+    if changed:
+        print(f"[fx] week to {through}: {len(changed)} point(s) corrected with final rates")
+    return {"skipped": False, "revised_through": through, "changed": changed}
+
+
 # How far back the weekly dividend sweep looks; see run_daily_update.
 DIVIDEND_SWEEP_DAYS = 120
 
@@ -730,6 +791,12 @@ def _scheduler():
                     # Non-fatal: fundamentals are a slow-moving nice-to-have,
                     # a failure here must never block the daily price/NAV update.
                     print(f"[scheduler] fundamentals update FAILED (non-fatal): {e}")
+
+                # Weekly; returns at once on any day it has nothing to do.
+                try:
+                    run_fx_revision()
+                except Exception as e:
+                    print(f"[scheduler] FX revision FAILED (non-fatal): {e}")
         except Exception as e:
             # A failure must not silently retire the scheduler for the rest of
             # the day: back off and retry, and surface the reason in /api/status.

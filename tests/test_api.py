@@ -733,3 +733,101 @@ def test_no_sweep_reaches_back_before_reinvestment_began(client, monkeypatch):
     after = {h["date"]: h["nav_usd"] for h in db_module.nav_history()}
     assert after["2026-08-20"] == before["2026-08-20"], "the price-only past is left alone"
 
+
+# ------------------------------------------------ weekly FX finalisation
+# Weekday points are valued at 18:00 with exchange rates still moving; the
+# next fetch overwrites the archive with the final rate. Friday's revision
+# re-marks the week against those final rates.
+
+def _week(rates_at_publication, final_rates, days):
+    """Publish each day with `rates_at_publication`, then overwrite the archive
+    with `final_rates`, as the next day's fetch does."""
+    import index_engine as ie
+    others = [c for c in u.CURRENCIES if c not in (u.NUMERAIRE, "CHF")]
+    for d in days:
+        _bars(d, list(u.UNIVERSE))
+        db_module.upsert_fx([{"ccy": c, "rate": 1.0, "date": d} for c in others]
+                            + [{"ccy": "CHF", "rate": rates_at_publication[d], "date": d}])
+        prices = {t: 10.0 for t in u.UNIVERSE}
+        ie.update(d, prices, db_module.fx_asof(d))
+    db_module.upsert_fx([{"ccy": "CHF", "rate": final_rates[d], "date": d} for d in days])
+
+
+def _nps(date):
+    return [h for h in db_module.nav_history() if h["date"] == date][0]
+
+
+WEEK = ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"]
+
+
+def test_friday_corrects_the_week_with_final_rates(client):
+    import datetime as _dt
+    db_module.set_meta("dividends_since", "2026-11-16")
+    live = {d: 1.25 for d in WEEK}
+    final = dict(live, **{"2026-11-17": 1.26, "2026-11-19": 1.24})   # Friday unchanged
+    _week(live, final, WEEK)
+    before = {d: _nps(d)["nav_per_share"] for d in WEEK}
+
+    out = server.run_fx_revision(_dt.date(2026, 11, 20))
+
+    assert sorted(c["date"] for c in out["changed"]) == ["2026-11-17", "2026-11-19"]
+    assert _nps("2026-11-17")["nav_per_share"] != before["2026-11-17"]
+    assert _nps("2026-11-17")["revised_at"], "a corrected point says so"
+    assert _nps("2026-11-20")["revised_at"] is None, "Friday was already final"
+    assert db_module.get_meta("fx_revised_through") == "2026-11-20"
+
+
+def test_nothing_happens_midweek_once_the_week_is_done(client):
+    import datetime as _dt
+    db_module.set_meta("dividends_since", "2026-11-16")
+    _week({d: 1.25 for d in WEEK}, {d: 1.25 for d in WEEK}, WEEK)
+    server.run_fx_revision(_dt.date(2026, 11, 20))
+    assert server.run_fx_revision(_dt.date(2026, 11, 25))["skipped"] is True
+
+
+def test_a_missed_friday_is_caught_up_the_next_week(client):
+    import datetime as _dt
+    db_module.set_meta("dividends_since", "2026-11-16")
+    _week({d: 1.25 for d in WEEK}, dict({d: 1.25 for d in WEEK}, **{"2026-11-18": 1.27}), WEEK)
+
+    out = server.run_fx_revision(_dt.date(2026, 11, 23))     # Monday after
+    assert [c["date"] for c in out["changed"]] == ["2026-11-18"]
+    assert db_module.get_meta("fx_revised_through") == "2026-11-20"
+
+
+def test_the_first_revision_leaves_the_price_only_past_alone(client):
+    import datetime as _dt
+    days = ["2026-11-12"] + WEEK
+    db_module.set_meta("dividends_since", "2026-11-16")
+    _week({d: 1.25 for d in days}, {d: 1.30 for d in days}, days)
+    before = _nps("2026-11-12")["nav_per_share"]
+
+    server.run_fx_revision(_dt.date(2026, 11, 20))
+    assert _nps("2026-11-12")["nav_per_share"] == before
+    assert _nps("2026-11-12")["revised_at"] is None
+
+
+def test_the_days_before_a_rebalance_are_finalised_first(client, monkeypatch):
+    """The year turns midweek: Dec 30-31 come after the last Friday, and once
+    the rebalance has happened no revision can reach them."""
+    db_module.set_meta("history_repair", "1")
+    db_module.set_meta("dividend_sweep_date", "2099-01-01")
+    db_module.set_meta("dividends_since", "2026-12-28")
+    days = ["2026-12-28", "2026-12-29", "2026-12-30", "2026-12-31"]
+    _week({d: 1.25 for d in days}, dict({d: 1.25 for d in days}, **{"2026-12-30": 1.27}), days)
+    db_module.set_meta("fx_revised_through", "2026-12-29")
+    before = _nps("2026-12-30")["nav_per_share"]
+
+    _feed(monkeypatch, days + ["2027-01-04"], {})
+    real = server.marketdata.fetch
+    def keep_final_fx(day_offset=0, window=1):
+        vd, rows, fx, divs, splits = real(day_offset, window)
+        fx = [r for r in fx if r["date"] == "2027-01-04"]       # archive keeps final rates
+        return vd, rows, fx, divs, splits
+    monkeypatch.setattr(server.marketdata, "fetch", keep_final_fx)
+    server.run_daily_update()
+
+    assert _nps("2027-01-04")["rebalanced"] == 1
+    assert _nps("2026-12-30")["nav_per_share"] != before, "finalised before the wall"
+    assert db_module.get_meta("fx_revised_through") == "2026-12-31"
+

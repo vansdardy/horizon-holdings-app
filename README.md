@@ -202,6 +202,16 @@ a holiday never costs a day its value. The note under the chart counts only clos
 on their way. Whether a missing close is a holiday is read from the data itself: if no company on
 that exchange traded while other exchanges did, the exchange was shut.
 
+### Exchange rates are finalised every Friday
+
+The daily fetch runs at 18:00, when the currency market is still trading on every weekday except
+Friday. So a Monday-to-Thursday value uses exchange rates that have not finished moving, and can
+differ from the final figure by up to about half a percent. Every Friday evening the app re-values
+the week's points with the final rates and marks each one it changes as revised. Friday's own point
+needs no correction: the currency market closes at 17:00 New York time on Friday. If the app was
+not running on Friday, the next evening it runs catches up. Points before 11 September, when
+dividend reinvestment began, are left as originally published.
+
 ---
 
 ## Build from source

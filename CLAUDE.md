@@ -263,6 +263,13 @@ in-place. Preserve them:
   once the amount is set, weeks later. **No reconciliation may book before `meta.dividends_since`**
   (when reinvestment began on that database): the series before it is price-only by the user's
   decision, and a 120-day lookback once tried to book 17 pre-feature payments.
+- **Weekday NAV points are provisional on FX until Friday.** The 18:00 fetch reads FX bars still
+  trading (the FX week closes Friday 17:00 ET), and the next fetch overwrites the archive with
+  the final rate. `run_fx_revision`, called from the scheduler only, re-marks everything after
+  `meta.fx_revised_through` once per week; the days before a rebalance are finalised just before
+  it (`_revise_fx` in `run_daily_update`), because no re-mark can cross a rebalance. Measured
+  drift: up to ~0.5% in CHF on weekdays, Fridays exact. `restate_series` compares **both**
+  `nav_usd` and `nav_base` — a base-currency rate change alone barely moves the former.
 - **Fundamentals fetched within `SPLIT_SETTLE_DAYS` (21) after a split are refetched once the
   window passes** (`server._fundamentals_fetched_mid_split`). Yahoo adjusts price and per-share
   EPS/dividend at different times: the 2026-10-01 fetch recorded 8766.T at a P/E of 1.9. A split
